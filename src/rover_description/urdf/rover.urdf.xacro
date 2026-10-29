@@ -12,6 +12,7 @@
   <xacro:property name="track_width" value="0.559"/>
   <xacro:property name="wheel_width" value="0.1016"/>
   <xacro:property name="wheel_mass" value="1.5"/>
+  <xacro:property name="max_steer_angle" value="0.7"/>
 
   <!-- Height of the chassis box center, measured from base_link -->
   <xacro:property name="chassis_z"
@@ -60,7 +61,7 @@
   </link>
 
     <!-- ===== Wheels ===== -->
-  <xacro:macro name="wheel" params="prefix x y">
+  <xacro:macro name="wheel" params="prefix parent x y">
     <link name="${prefix}_wheel">
       <visual>
         <origin xyz="0 0 0" rpy="${pi / 2} 0 0"/>
@@ -86,14 +87,36 @@
     </link>
 
     <joint name="${prefix}_wheel_joint" type="continuous">
-      <parent link="base_link"/>
+      <parent link="${parent}"/>
       <child link="${prefix}_wheel"/>
       <origin xyz="${x} ${y} 0" rpy="0 0 0"/>
       <axis xyz="0 1 0"/>
     </joint>
   </xacro:macro>
 
-  <xacro:wheel prefix="rear_left" x="0" y="${track_width / 2}"/>
-  <xacro:wheel prefix="rear_right" x="0" y="${-track_width / 2}"/>
+  <xacro:macro name="steering_knuckle" params="prefix y">
+    <link name="${prefix}_knuckle">
+      <inertial>
+        <mass value="0.5"/>
+        <inertia ixx="0.001" iyy="0.001" izz="0.001" ixy="0" ixz="0" iyz="0"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_steer_joint" type="revolute">
+      <parent link="base_link"/>
+      <child link="${prefix}_knuckle"/>
+      <origin xyz="${wheelbase} ${y} 0" rpy="0 0 0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="${-max_steer_angle}" upper="${max_steer_angle}"
+             effort="50" velocity="2.0"/>
+    </joint>
+
+    <xacro:wheel prefix="${prefix}" parent="${prefix}_knuckle" x="0" y="0"/>
+  </xacro:macro>
+
+  <xacro:wheel prefix="rear_left" parent="base_link" x="0" y="${track_width / 2}"/>
+  <xacro:wheel prefix="rear_right" parent="base_link" x="0" y="${-track_width / 2}"/>
+  <xacro:steering_knuckle prefix="front_left" y="${track_width / 2}"/>
+  <xacro:steering_knuckle prefix="front_right" y="${-track_width / 2}"/>
 
 </robot>
