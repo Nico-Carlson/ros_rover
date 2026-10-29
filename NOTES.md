@@ -120,7 +120,15 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   robot_state_publisher with `use_sim_time`, and spawns the rover with
   `ros_gz_sim create` (`-topic robot_description -z 0.3`). Spawn works. The
   "gazebo process has died, exit code -2" message on Ctrl+C is harmless.
-- Next: bridge `/cmd_vel` into Gazebo and drive the rover.
+- Done: bridge node in `sim.launch.py` (`ros_gz_bridge parameter_bridge`) for `/clock`,
+  `/cmd_vel` (ROS to Gazebo, `]`), `/odom`, `/tf` (Gazebo to ROS, `[`). Gazebo expands the
+  plugin's relative topic names to `/cmd_vel`, `/odom`, `/tf`, `/clock` (checked with
+  `gz topic -l`). Verified: `/clock` and `/odom` arrive in ROS.
+- Sim odom covariance is all zeros. Revisit when configuring the EKF.
+- `/joint_states` has no publisher yet (needs the Gazebo JointStatePublisher plugin + bridge).
+- Next: send the first drive command and confirm the rover moves.
+
+
 
 ## Old files (uploaded earlier, NOT trusted, reuse selectively)
 - `ekf.yaml`: robot_localization EKF + navsat_transform, fuses /odom, /imu, GPS.
