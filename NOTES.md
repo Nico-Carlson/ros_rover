@@ -139,8 +139,10 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   PLACEHOLDER values; get real RPLIDAR S2 specs from its datasheet). Gazebo merges `lidar_link` into
   `lift_platform` (fixed-joint lumping), so `gz_frame_id` is set to keep the frame name.
   `gz_frame_id` triggers a harmless "not defined in SDF" warning.
-- Next: bridge `/scan` to ROS and check its `frame_id`.
-
+- Done: `/scan` bridged to ROS (`sensor_msgs/msg/LaserScan`, Gazebo to ROS). Verified: ~10 Hz and
+  `frame_id: lidar_link`.
+- Next: check that the TF tree reaches `lidar_link` (the lift is a prismatic joint, so it needs
+  joint states), then IMU and GPS.
 
 
 
