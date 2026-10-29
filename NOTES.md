@@ -126,9 +126,12 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   `gz topic -l`). Verified: `/clock` and `/odom` arrive in ROS.
 - Sim odom covariance is all zeros. Revisit when configuring the EKF.
 - `/joint_states` has no publisher yet (needs the Gazebo JointStatePublisher plugin + bridge).
-- Next: send the first drive command and confirm the rover moves.
-
-
+- Verified: publishing `/cmd_vel` (linear x 0.3) drives the rover straight and `/odom` x increases.
+  The sim plugin keeps the LAST command until a new one arrives (it only stopped when a zero
+  command was sent). The real firmware needs a command-timeout watchdog that stops the motors.
+- Verified: steering works (linear 0.3 + angular 0.3 drives a curve, front wheels turn,
+  circle size looks right). Ackermann can't turn in place, so always send forward speed with turn rate.
+- Next: simulated sensors, one at a time: LIDAR first, then IMU, GPS, joint states.
 
 ## Old files (uploaded earlier, NOT trusted, reuse selectively)
 - `ekf.yaml`: robot_localization EKF + navsat_transform, fuses /odom, /imu, GPS.
