@@ -62,6 +62,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Branch names are descriptive (`robot-model`), never phase numbers.
 - Tell me when to commit, push, branch, and merge.
 - Say when something is a guess or can't be verified. Don't state it as fact.
+- After merging any branch make a tag before deleting any branches.
 
 ## Workflow gotchas (these have bitten us)
 - After editing any file in a package, run `colcon build --packages-select <pkg>`
