@@ -9,6 +9,9 @@
   <xacro:property name="wheelbase" value="0.686"/>
   <xacro:property name="wheel_radius" value="0.15875"/>
   <xacro:property name="ground_clearance" value="0.08"/>
+  <xacro:property name="track_width" value="0.559"/>
+  <xacro:property name="wheel_width" value="0.1016"/>
+  <xacro:property name="wheel_mass" value="1.5"/>
 
   <!-- Height of the chassis box center, measured from base_link -->
   <xacro:property name="chassis_z"
@@ -16,6 +19,10 @@
 
   <material name="chassis_grey">
     <color rgba="0.5 0.5 0.55 1.0"/>
+  </material>
+
+  <material name="wheel_black">
+    <color rgba="0.1 0.1 0.1 1.0"/>
   </material>
 
   <!-- ===== Frames ===== -->
@@ -51,5 +58,42 @@
         ixy="0" ixz="0" iyz="0"/>
     </inertial>
   </link>
+
+    <!-- ===== Wheels ===== -->
+  <xacro:macro name="wheel" params="prefix x y">
+    <link name="${prefix}_wheel">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi / 2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+        <material name="wheel_black"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi / 2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="${wheel_mass}"/>
+        <inertia
+          ixx="${wheel_mass / 12 * (3 * wheel_radius**2 + wheel_width**2)}"
+          iyy="${wheel_mass * wheel_radius**2 / 2}"
+          izz="${wheel_mass / 12 * (3 * wheel_radius**2 + wheel_width**2)}"
+          ixy="0" ixz="0" iyz="0"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_wheel_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="${prefix}_wheel"/>
+      <origin xyz="${x} ${y} 0" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:wheel prefix="rear_left" x="0" y="${track_width / 2}"/>
+  <xacro:wheel prefix="rear_right" x="0" y="${-track_width / 2}"/>
 
 </robot>
