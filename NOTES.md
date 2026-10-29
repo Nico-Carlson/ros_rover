@@ -80,6 +80,9 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - `$(find rover_description)` in xacro resolves to the INSTALLED copy. After editing any
   xacro, run `colcon build` BEFORE testing it with `xacro` or `gz sdf`, or the check reads
   stale files and misleads you.
+- In the world file, every `<plugin>` must be a sibling. A plugin line pasted between another
+  plugin's opening and closing tags is silently ignored (this disabled the IMU once). After
+  editing, print the plugin block with `sed -n` and check the nesting by eye.
 
 ## Mistakes already made (don't repeat)
 - ROS 2 has NO fish setup script. Use zsh with `setup.zsh`.
@@ -145,8 +148,10 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   `/joint_states` (`sensor_msgs/msg/JointState[gz.msgs.Model`). Verified: TF `base_link` to
   `lidar_link` = (0.343, 0, 0.408) with the lift down. Without joint states the lift and wheel
   frames sit in a disconnected TF tree.
-- Next: simulated IMU, then GPS.
-
+- Done: simulated IMU. `gz-sim-imu-system` in the world, `imu` sensor on `imu_link` in
+  `rover.gazebo.xacro` (noise values are PLACEHOLDERS), bridged as `/imu`
+  (`sensor_msgs/msg/Imu[gz.msgs.IMU`). Verified: ~100 Hz, `frame_id: imu_link`, z accel ~9.8.
+- Next: simulated GPS (NavSat).
 
 ## Old files (uploaded earlier, NOT trusted, reuse selectively)
 - `ekf.yaml`: robot_localization EKF + navsat_transform, fuses /odom, /imu, GPS.
