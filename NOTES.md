@@ -141,9 +141,11 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   `gz_frame_id` triggers a harmless "not defined in SDF" warning.
 - Done: `/scan` bridged to ROS (`sensor_msgs/msg/LaserScan`, Gazebo to ROS). Verified: ~10 Hz and
   `frame_id: lidar_link`.
-- Next: check that the TF tree reaches `lidar_link` (the lift is a prismatic joint, so it needs
-  joint states), then IMU and GPS.
-
+- Done: `JointStatePublisher` plugin in `rover.gazebo.xacro` publishes all joints, bridged to
+  `/joint_states` (`sensor_msgs/msg/JointState[gz.msgs.Model`). Verified: TF `base_link` to
+  `lidar_link` = (0.343, 0, 0.408) with the lift down. Without joint states the lift and wheel
+  frames sit in a disconnected TF tree.
+- Next: simulated IMU, then GPS.
 
 
 ## Old files (uploaded earlier, NOT trusted, reuse selectively)
@@ -161,3 +163,9 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   steering servo, an RC receiver (7 channels), and the lift controller (relay, limit
   switches). Sensor ESP handles ultrasonics, gyro (I2C), battery voltage, and an override
   switch.
+
+
+
+## Ideas for later (not committed to)
+- SLAM (slam_toolbox) as an optional branch after GPS navigation works. Not needed for the
+  stated goals; a 2D LIDAR on rough forest terrain may map poorly. Keep the lift down.
