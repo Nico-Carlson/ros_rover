@@ -51,3 +51,56 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - [ ] Boundary roaming + stuck recovery
 - [ ] ESP32 firmware + Pi hardware bridge
 - [ ] Field testing
+
+
+## How to work with me (instructions for any assistant)
+- ONE step at a time. Never give a long multi-step list; I hit problems mid-way
+  and a big list gets buried. Wait for my output before the next step.
+- I type all code myself to learn it. Explain what each part does, briefly.
+- I'm new to ROS and weak in terminal and C++. Python is fine. Firmware is C++.
+- Editor is LazyVim (use `nvim`). Give commands for zsh unless I say otherwise.
+- Branch names are descriptive (`robot-model`), never phase numbers.
+- Tell me when to commit, push, branch, and merge.
+- Say when something is a guess or can't be verified. Don't state it as fact.
+
+## Workflow gotchas (these have bitten us)
+- After editing any file in a package, run `colcon build --packages-select <pkg>`
+  from `~/rover_ws` before launching. Launch uses the installed copy, not `src/`.
+- After creating a NEW package, open a new terminal (or `source ~/.config/zsh/.zshrc`).
+- A stale launch left running causes odd symptoms (old GUI, wheels stacked at
+  the origin). Check with `ros2 node list` and `pkill -f` if needed.
+- Xacro macros must be defined above the lines that call them. Properties can
+  only use properties defined above them.
+- Launch files need their folder installed (`data_files` in setup.py for Python
+  packages, `install(DIRECTORY ...)` in CMakeLists.txt for rover_description).
+
+## Mistakes already made (don't repeat)
+- ROS 2 has NO fish setup script. Use zsh with `setup.zsh`.
+- Edit `~/.config/zsh/.zshrc`, not `~/.zshrc` (ZDOTDIR points to the former).
+- Hyprland here uses the Lua config format. Custom changes go in
+  `~/hakuspace-control/hyprland-custom.lua`, never in `config.lua`.
+- `QT_SCALE_FACTOR` caused black flashing in RViz. Don't use it.
+
+## Repo layout
+- Repo: github.com/Nico-Carlson/ros_rover (private), local folder `~/rover_ws`
+- `src/rover_basics`: ament_python practice package (hello publisher/subscriber)
+- `src/rover_description`: ament_cmake. `urdf/rover.urdf.xacro`, `launch/display.launch.py`,
+  `rviz/rover.rviz`
+- Measurements live as `xacro:property` values at the top of the xacro. Edit those,
+  not the geometry.
+
+## Old files (uploaded earlier, NOT trusted, reuse selectively)
+- `ekf.yaml`: robot_localization EKF + navsat_transform, fuses /odom, /imu, GPS.
+  Reuse as a starting point when we reach localization.
+- `nav2_params.yaml` (and a duplicate `nav2_params_1.yaml`): Ackermann MPPI + Smac Hybrid,
+  rolling-window costmaps, no static map. Known issues: footprint is 0.56 m wide but the
+  real rover is about 0.66 m with wheels; `minimum_turning_radius` 0.8 depends on the
+  real max steer angle; AMCL section is irrelevant without a map.
+- `robot.xacro` / `robot.gazebo`: old model, replaced by rover_description. The Gazebo file
+  is a useful reference for the Ackermann, IMU, LIDAR, and navsat plugins.
+- NOT yet reviewed: `Rover_Documentation.docx`, `ackermann_bt.xml`,
+  `ackermann_through_poses_bt.xml`.
+- Wiring PDFs (unverified): master ESP drives a BTS7960 H-bridge for the drive motor, a
+  steering servo, an RC receiver (7 channels), and the lift controller (relay, limit
+  switches). Sensor ESP handles ultrasonics, gyro (I2C), battery voltage, and an override
+  switch.
