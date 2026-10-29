@@ -18,12 +18,36 @@
   <xacro:property name="chassis_z"
                   value="${ground_clearance + chassis_height / 2 - wheel_radius}"/>
 
+  <!-- Top surface of the chassis, measured from base_link -->
+  <xacro:property name="chassis_top_z"
+                  value="${ground_clearance + chassis_height - wheel_radius}"/>
+
+  <!-- Sensor positions in meters from base_link (rear axle center, x forward, z up) -->
+  <!-- Scissor lift: platform slides straight up from the chassis top -->
+  <xacro:property name="lift_x" value="${wheelbase / 2}"/>
+  <xacro:property name="lift_y" value="0.0"/>
+  <xacro:property name="lift_travel" value="1.2192"/>
+  <xacro:property name="lift_platform_mass" value="5.0"/>
+  <xacro:property name="lidar_offset" value="0.03"/>
+
+  <xacro:property name="imu_x" value="${wheelbase / 2}"/>
+  <xacro:property name="imu_y" value="0.0"/>
+  <xacro:property name="imu_z" value="${chassis_z}"/>
+
+  <xacro:property name="gps_x" value="0.0"/>
+  <xacro:property name="gps_y" value="0.0"/>
+  <xacro:property name="gps_z" value="${chassis_top_z + 0.03}"/>
+
   <material name="chassis_grey">
     <color rgba="0.5 0.5 0.55 1.0"/>
   </material>
 
   <material name="wheel_black">
     <color rgba="0.1 0.1 0.1 1.0"/>
+  </material>
+
+  <material name="sensor_blue">
+    <color rgba="0.1 0.3 0.8 1.0"/>
   </material>
 
   <!-- ===== Frames ===== -->
@@ -119,4 +143,76 @@
   <xacro:steering_knuckle prefix="front_left" y="${track_width / 2}"/>
   <xacro:steering_knuckle prefix="front_right" y="${-track_width / 2}"/>
 
+  <!-- ===== Sensors ===== -->
+  <!-- Lift platform: slides up and down on a prismatic joint -->
+  <link name="lift_platform">
+    <visual>
+      <geometry>
+        <box size="0.4 0.4 0.02"/>
+      </geometry>
+      <material name="chassis_grey"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.4 0.4 0.02"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="${lift_platform_mass}"/>
+      <inertia ixx="0.067" iyy="0.067" izz="0.133" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </link>
+
+  <joint name="lift_joint" type="prismatic">
+    <parent link="base_link"/>
+    <child link="lift_platform"/>
+    <origin xyz="${lift_x} ${lift_y} ${chassis_top_z}" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="0.0" upper="${lift_travel}" effort="500" velocity="0.05"/>
+  </joint>
+
+  <!-- LIDAR rides on the platform -->
+  <link name="lidar_link">
+    <visual>
+      <geometry>
+        <cylinder radius="0.04" length="0.04"/>
+      </geometry>
+      <material name="sensor_blue"/>
+    </visual>
+  </link>
+
+  <joint name="lidar_joint" type="fixed">
+    <parent link="lift_platform"/>
+    <child link="lidar_link"/>
+    <origin xyz="0 0 ${lidar_offset}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="imu_link">
+    <visual>
+      <geometry>
+        <box size="0.04 0.04 0.02"/>
+      </geometry>
+      <material name="sensor_blue"/>
+    </visual>
+  </link>
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="${imu_x} ${imu_y} ${imu_z}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="gps_link">
+    <visual>
+      <geometry>
+        <box size="0.06 0.06 0.02"/>
+      </geometry>
+      <material name="sensor_blue"/>
+    </visual>
+  </link>
+  <joint name="gps_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="gps_link"/>
+    <origin xyz="${gps_x} ${gps_y} ${gps_z}" rpy="0 0 0"/>
+  </joint>
+  
 </robot>
