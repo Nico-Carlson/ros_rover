@@ -63,6 +63,9 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Tell me when to commit, push, branch, and merge.
 - Say when something is a guess or can't be verified. Don't state it as fact.
 - After merging any branch make a tag before deleting any branches.
+- Keep this file current: as progress is made, record relevant context and
+  instructions here. It is the project's "second brain" so a new model or a new
+  maintainer never has to rebuild context from scratch.
 
 ## Workflow gotchas (these have bitten us)
 - After editing any file in a package, run `colcon build --packages-select <pkg>`
@@ -89,6 +92,19 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   `rviz/rover.rviz`
 - Measurements live as `xacro:property` values at the top of the xacro. Edit those,
   not the geometry.
+
+## Gazebo simulation (branch `gazebo-sim`, in progress)
+- Verified installed: Gazebo Sim 8.15.0, ros_gz (ros_gz_sim, ros_gz_bridge,
+  ros_gz_image, ros_gz_interfaces), robot_localization.
+- Plan: Gazebo tags live in a separate `urdf/rover.gazebo.xacro` in
+  rover_description, included from `rover.urdf.xacro`. World and sim launch file
+  to follow.
+- Old `robot.gazebo` uses the old model's names. Translate when reusing:
+  `wheel1/2_joint` -> `rear_right/left_wheel_joint`, `body_link` -> `base_link`,
+  `wheel_separation` -> `track_width`, `wheelbase_length` -> `wheelbase`,
+  `steering_limit` 0.785 -> `max_steer_angle` (0.7, placeholder).
+- Plugin tag names (AckermannSteering, JointStatePublisher, Imu, Sensors, navsat)
+  come from the old file and memory; verify against the Gazebo Harmonic docs.
 
 ## Old files (uploaded earlier, NOT trusted, reuse selectively)
 - `ekf.yaml`: robot_localization EKF + navsat_transform, fuses /odom, /imu, GPS.
