@@ -45,7 +45,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - [x] ROS 2, Gazebo, shell, git set up
 - [x] ROS basics (rover_basics package: publisher, subscriber, launch file)
 - [x] rover_description: chassis, 4 wheels, steering, sensors, lift, RViz launch
-- [ ] Gazebo simulation (Ackermann drive, LIDAR, IMU, GPS)
+- [x] Gazebo simulation (Ackermann drive, LIDAR, IMU, GPS)
 - [ ] EKF + navsat_transform
 - [ ] Nav2 (reuse old params; footprint must be updated, wheels make it wider than 0.56)
 - [ ] Boundary roaming + stuck recovery
@@ -99,7 +99,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Measurements live as `xacro:property` values at the top of the xacro. Edit those,
   not the geometry.
 
-## Gazebo simulation (branch `gazebo-sim`, in progress)
+## Gazebo simulation (done, tag gazebo-sim-v1)
 - Verified installed: Gazebo Sim 8.15.0, ros_gz (ros_gz_sim, ros_gz_bridge,
   ros_gz_image, ros_gz_interfaces), robot_localization.
 - Plan: Gazebo tags live in a separate `urdf/rover.gazebo.xacro` in
@@ -151,7 +151,17 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Done: simulated IMU. `gz-sim-imu-system` in the world, `imu` sensor on `imu_link` in
   `rover.gazebo.xacro` (noise values are PLACEHOLDERS), bridged as `/imu`
   (`sensor_msgs/msg/Imu[gz.msgs.IMU`). Verified: ~100 Hz, `frame_id: imu_link`, z accel ~9.8.
-- Next: simulated GPS (NavSat).
+- Done: simulated GPS. `gz-sim-navsat-system` plus `<spherical_coordinates>` (origin lat 45.0,
+  lon -110.0, PLACEHOLDER; set to the real test site later, ENU orientation) in the world, and a
+  `navsat` sensor on `gps_link` publishing `gps/fix`, bridged as `/gps/fix`
+  (`sensor_msgs/msg/NavSatFix[gz.msgs.NavSat`). Verified: ~10 Hz, `frame_id: gps_link`.
+- Known gaps: the bridge zeroes `position_covariance`, and the sim GPS has no noise (unrealistically
+  perfect). Both odom and GPS covariances need handling in the EKF step.
+- World is still a flat empty plane. Add obstacles/trees before testing navigation.
+- Branch goal complete: drive, steering, LIDAR, IMU, GPS, joint states all verified in Gazebo.
+
+
+
 
 ## Old files (uploaded earlier, NOT trusted, reuse selectively)
 - `ekf.yaml`: robot_localization EKF + navsat_transform, fuses /odom, /imu, GPS.

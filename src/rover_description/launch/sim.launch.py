@@ -50,6 +50,7 @@ def generate_launch_description():
             "/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan",
             "/joint_states@sensor_msgs/msg/JointState[gz.msgs.Model",
             "/imu@sensor_msgs/msg/Imu[gz.msgs.IMU",
+            "/gps/fix@sensor_msgs/msg/NavSatFix[gz.msgs.NavSat",
         ],
         output="screen",
     )
