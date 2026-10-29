@@ -77,6 +77,9 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   only use properties defined above them.
 - Launch files need their folder installed (`data_files` in setup.py for Python
   packages, `install(DIRECTORY ...)` in CMakeLists.txt for rover_description).
+- `$(find rover_description)` in xacro resolves to the INSTALLED copy. After editing any
+  xacro, run `colcon build` BEFORE testing it with `xacro` or `gz sdf`, or the check reads
+  stale files and misleads you.
 
 ## Mistakes already made (don't repeat)
 - ROS 2 has NO fish setup script. Use zsh with `setup.zsh`.
@@ -131,7 +134,15 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   command was sent). The real firmware needs a command-timeout watchdog that stops the motors.
 - Verified: steering works (linear 0.3 + angular 0.3 drives a curve, front wheels turn,
   circle size looks right). Ackermann can't turn in place, so always send forward speed with turn rate.
-- Next: simulated sensors, one at a time: LIDAR first, then IMU, GPS, joint states.
+- Done: `Sensors` system (ogre2) added to the world. `gpu_lidar` sensor on `lidar_link` in
+  `rover.gazebo.xacro` publishes `/scan` (gz.msgs.LaserScan, 720 samples, 10 Hz, 0.05 to 30 m range,
+  PLACEHOLDER values; get real RPLIDAR S2 specs from its datasheet). Gazebo merges `lidar_link` into
+  `lift_platform` (fixed-joint lumping), so `gz_frame_id` is set to keep the frame name.
+  `gz_frame_id` triggers a harmless "not defined in SDF" warning.
+- Next: bridge `/scan` to ROS and check its `frame_id`.
+
+
+
 
 ## Old files (uploaded earlier, NOT trusted, reuse selectively)
 - `ekf.yaml`: robot_localization EKF + navsat_transform, fuses /odom, /imu, GPS.
