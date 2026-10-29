@@ -105,6 +105,18 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   `steering_limit` 0.785 -> `max_steer_angle` (0.7, placeholder).
 - Plugin tag names (AckermannSteering, JointStatePublisher, Imu, Sensors, navsat)
   come from the old file and memory; verify against the Gazebo Harmonic docs.
+- Done: `urdf/rover.gazebo.xacro` has wheel friction (mu1/mu2 1.0) and the
+  AckermannSteering plugin. The xacro converts and validates
+  (`xacro ... > /tmp/rover.urdf && gz sdf -k /tmp/rover.urdf`), but the plugin is
+  NOT yet tested in a running sim.
+- Done: `worlds/rover_world.sdf` has 1 ms physics, the Physics, UserCommands and
+  SceneBroadcaster systems, a sun, and a 100 m x 100 m ground plane. It loads with
+  `gz sim -r <installed path>`. `worlds` is installed in CMakeLists.txt.
+- Everything in a world file must sit between `<world>` and `</world>`. The error
+  "Root object can only contain one of model, light or actor" means something is outside.
+- Still to add to the world: Sensors, Imu and NavSat systems, once those sensors exist
+  in the xacro.
+- Next: sim launch file that starts Gazebo with the world and spawns the rover.
 
 ## Old files (uploaded earlier, NOT trusted, reuse selectively)
 - `ekf.yaml`: robot_localization EKF + navsat_transform, fuses /odom, /imu, GPS.
