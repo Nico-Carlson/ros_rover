@@ -116,7 +116,11 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   "Root object can only contain one of model, light or actor" means something is outside.
 - Still to add to the world: Sensors, Imu and NavSat systems, once those sensors exist
   in the xacro.
-- Next: sim launch file that starts Gazebo with the world and spawns the rover.
+- Done: `launch/sim.launch.py` starts Gazebo with the world (`-r`), runs
+  robot_state_publisher with `use_sim_time`, and spawns the rover with
+  `ros_gz_sim create` (`-topic robot_description -z 0.3`). Spawn works. The
+  "gazebo process has died, exit code -2" message on Ctrl+C is harmless.
+- Next: bridge `/cmd_vel` into Gazebo and drive the rover.
 
 ## Old files (uploaded earlier, NOT trusted, reuse selectively)
 - `ekf.yaml`: robot_localization EKF + navsat_transform, fuses /odom, /imu, GPS.
