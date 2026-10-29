@@ -215,4 +215,6 @@
     <origin xyz="${gps_x} ${gps_y} ${gps_z}" rpy="0 0 0"/>
   </joint>
   
+  <xacro:include filename="$(find rover_description)/urdf/rover.gazebo.xacro"/>
+
 </robot>
