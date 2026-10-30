@@ -145,8 +145,9 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Verified: steering works (linear 0.3 + angular 0.3 drives a curve, front wheels turn,
   circle size looks right). Ackermann can't turn in place, so always send forward speed with turn rate.
 - Done: `Sensors` system (ogre2) added to the world. `gpu_lidar` sensor on `lidar_link` in
-  `rover.gazebo.xacro` publishes `/scan` (gz.msgs.LaserScan, 720 samples, 10 Hz, 0.05 to 30 m range,
-  PLACEHOLDER values; get real RPLIDAR S2 specs from its datasheet). Gazebo merges `lidar_link` into
+  `rover.gazebo.xacro` publishes `/scan` (gz.msgs.LaserScan,   LIDAR now follows the RPLIDAR S2 spec: 3200 samples (0.1125 deg), 10 Hz, range 0.05 to 10 m
+  (the S2's 30 m is for bright targets only; dark forest targets give ~10 m). Verified in the sim.
+  The S2 also has +/-1.5 deg scan-plane flatness and +/-30 mm accuracy, not yet modeled. Gazebo merges `lidar_link` into
   `lift_platform` (fixed-joint lumping), so `gz_frame_id` is set to keep the frame name.
   `gz_frame_id` triggers a harmless "not defined in SDF" warning.
 - Done: `/scan` bridged to ROS (`sensor_msgs/msg/LaserScan`, Gazebo to ROS). Verified: ~10 Hz and
@@ -211,6 +212,10 @@ All positions are PLACEHOLDERS except the 3 in height. Rear set faces backward (
   ultrasonics (to be designed when we reach navigation).
 
 
+## Questions
+- Exact ultrasonic part (model number) is unknown, so their range/cone are still placeholders.
+- Which RPLIDAR S2 variant (30 m or 18 m) is on the rover; check the label.
+- Where the real GPS antenna sits (a forest rover probably needs it up on a mast).
 
 ## Ideas for later (not committed to)
 - SLAM (slam_toolbox) as an optional branch after GPS navigation works. Not needed for the
