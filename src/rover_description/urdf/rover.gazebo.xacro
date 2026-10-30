@@ -110,4 +110,39 @@
     </sensor>
   </gazebo>
     
+  <!-- Simulated ultrasonics: 5-ray LIDAR fans. Range/cone are PLACEHOLDERS (HC-SR04-like guess) -->
+  <xacro:macro name="ultrasonic_sensor" params="id">
+    <gazebo reference="us_${id}">
+      <sensor name="us_${id}_sensor" type="gpu_lidar">
+        <topic>us/${id}</topic>
+        <gz_frame_id>us_${id}</gz_frame_id>
+        <update_rate>10</update_rate>
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>5</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.131</min_angle>
+              <max_angle>0.131</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.03</min>
+            <max>4.0</max>
+            <resolution>0.01</resolution>
+          </range>
+        </lidar>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+
+  <xacro:ultrasonic_sensor id="front_left"/>
+  <xacro:ultrasonic_sensor id="front_mid"/>
+  <xacro:ultrasonic_sensor id="front_right"/>
+  <xacro:ultrasonic_sensor id="rear_left"/>
+  <xacro:ultrasonic_sensor id="rear_mid"/>
+  <xacro:ultrasonic_sensor id="rear_right"/>
+
 </robot>
