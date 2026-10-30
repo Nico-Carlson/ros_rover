@@ -195,3 +195,12 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 ## Ideas for later (not committed to)
 - SLAM (slam_toolbox) as an optional branch after GPS navigation works. Not needed for the
   stated goals; a 2D LIDAR on rough forest terrain may map poorly. Keep the lift down.
+## Ultrasonics (branch `ultrasonics`, in progress)
+- Six frames `us_front_left/mid/right` and `us_rear_left/mid/right` on `base_link` in
+  `rover.urdf.xacro`. Mounted 3 in (0.0762 m) above the top of the wheels (z = wheel_radius + 0.0762
+  from `base_link`), 0.15 m left/right of center, outer sensors angled 0.26 rad outward.
+  All positions are PLACEHOLDERS except the 3 in height. Rear set faces backward (yaw pi).
+- They sit below the LIDAR plane (~0.57 m), so they should see low obstacles like `rock_1`.
+- Plan: simulate each as a tiny multi-ray gpu_lidar (Gazebo has no ultrasonic sensor type, as far as
+  I know), then convert to `sensor_msgs/msg/Range` to match what the ESP32 firmware will publish.
+
