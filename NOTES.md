@@ -171,6 +171,10 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   2 m tall), `rock_1` (0.5 m tall) and `boulder_1` (0.9 m tall). Verified: the LIDAR scan plane is at
   ~0.57 m (chassis top 0.537 + 0.03), so it misses `rock_1` but sees the boulder. Anything lower
   than ~0.57 m is a blind spot for the 2D LIDAR; the ultrasonics are meant to cover it.
+- `stump_1` (0.4 m square, 0.5 m tall, at (2.5, 0)) sits directly ahead of the spawn point.
+  Verified: all five `/us/front_mid` rays read ~1.39 to 1.40 m, while the LIDAR does not see it
+  (it only appears if the rover is pushed into the ground in Gazebo). This confirms the LIDAR plane
+  is above 0.5 m, so low obstacles rely on the ultrasonics.
 
 
 
@@ -203,6 +207,9 @@ All positions are PLACEHOLDERS except the 3 in height. Rear set faces backward (
   Verified: `/us/front_mid` center ray reads 3.84 m to `tree_1`, matching the hand calculation.
 - TODO: convert to `sensor_msgs/msg/Range` (what the ESP32 firmware will publish) when we build the
   hardware bridge. The LaserScan form is fine for the sim.
+- Design consequence: anything under ~0.57 m is invisible to the LIDAR, and the ultrasonics only cover
+  the front and rear faces at short range. Nav2 will need a range-sensor obstacle layer fed by the
+  ultrasonics (to be designed when we reach navigation).
 
 
 
