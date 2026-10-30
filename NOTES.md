@@ -231,6 +231,29 @@ All positions are PLACEHOLDERS except the 3 in height. Rear set faces backward (
   with SLAM is unmeasured.
 - Open design decision: SLAM and the GPS EKF both want to own `map -> odom`. Plan: SLAM is a separate
   mapping mode, not run together with GPS navigation.
+- `rover_bringup/launch/slam.launch.py` wraps the stock online_async launch with our params and
+  `use_sim_time:=true` (hard-coded; make it a launch argument for the real rover).
+
+
+## Where we stopped / next steps (in order)
+1. Localization, branch `ekf-localization`: copy the old `ekf.yaml` into `rover_bringup/config/`.
+   Likely problems in the old file (NOT yet tested in the sim):
+   - TF conflict: the Gazebo bridge already publishes odom -> base_footprint on `/tf`, and an EKF with
+     `publish_tf: true` would publish the same transform. Only one can own it; probably remove the
+     `/tf` bridge line or turn off one of them.
+   - The real IMU (MPU6050 per old comments) has no compass heading, but navsat_transform needs a
+     heading reference. The sim IMU may supply one and hide this. Revisit before hardware.
+   - Sim odom and GPS covariances are all zeros; check how the EKF behaves.
+   - `use_sim_time: true` is hard-coded; the real rover needs false (make it a launch argument).
+2. Scan-gating node: republish `/scan` as `/scan_filtered` only while the lift is fully down.
+   Sim signal: lift joint position. Real signal: limit switch via ESP32. Same topic for both.
+3. Nav2 params in `rover_bringup/config/`: update the footprint (~0.66 m wide with wheels), set
+   `minimum_turning_radius` from the real steering limit, feed the ultrasonics to a range obstacle layer
+   (the LIDAR is blind below ~0.57 m), and check the MPPI controller's CPU cost on the Pi.
+4. Boundary roaming + stuck recovery, then the ESP32 firmware and Pi hardware bridge.
+- SLAM and the GPS EKF both own `map -> odom`: run SLAM as a separate mapping mode.
+- Old files not yet reviewed: `Rover_Documentation.docx`, `ackermann_bt.xml`, `ackermann_through_poses_bt.xml`.
+- New chat: paste this file first, plus the file being edited.
 
 
 ## Ideas for later (not committed to)
