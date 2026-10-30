@@ -46,6 +46,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - [x] ROS basics (rover_basics package: publisher, subscriber, launch file)
 - [x] rover_description: chassis, 4 wheels, steering, sensors, lift, RViz launch
 - [x] Gazebo simulation (Ackermann drive, LIDAR, IMU, GPS)
+- [x] SLAM in the sim (slam_toolbox online_async)
 - [ ] EKF + navsat_transform
 - [ ] Nav2 (reuse old params; footprint must be updated, wheels make it wider than 0.56)
 - [ ] Boundary roaming + stuck recovery
@@ -216,6 +217,44 @@ All positions are PLACEHOLDERS except the 3 in height. Rear set faces backward (
 - Exact ultrasonic part (model number) is unknown, so their range/cone are still placeholders.
 - Which RPLIDAR S2 variant (30 m or 18 m) is on the rover; check the label.
 - Where the real GPS antenna sits (a forest rover probably needs it up on a mast).
+
+
+## SLAM (branch `slam-mapping`, in progress)
+- `rover_bringup/config/slam_mapping.yaml` is a copy of the stock slam_toolbox
+  `mapper_params_online_async.yaml`. Only change so far: `max_laser_range` 20 -> 10 (S2 reaches ~10 m on
+  dark targets). Frames already matched: odom, map, base_footprint, `/scan`.
+- Verified in sim: the three trees and the boulder map in the right places and stay fixed while driving
+  with `ros2 run teleop_twist_keyboard teleop_twist_keyboard` (avoid `j`/`l`, which turn in place; press
+  `k` to stop, since the sim keeps the last command). RViz: Fixed Frame `map`, Map display on `/map`
+  with Durability `Transient Local`.
+- Caveat: sim odometry is perfect (no slip, zero covariance), so this is the easy case. Pi CPU load
+  with SLAM is unmeasured.
+- Open design decision: SLAM and the GPS EKF both want to own `map -> odom`. Plan: SLAM is a separate
+  mapping mode, not run together with GPS navigation.
+- `rover_bringup/launch/slam.launch.py` wraps the stock online_async launch with our params and
+  `use_sim_time:=true` (hard-coded; make it a launch argument for the real rover).
+
+
+## Where we stopped / next steps (in order)
+1. Localization, branch `ekf-localization`: copy the old `ekf.yaml` into `rover_bringup/config/`.
+   Likely problems in the old file (NOT yet tested in the sim):
+   - TF conflict: the Gazebo bridge already publishes odom -> base_footprint on `/tf`, and an EKF with
+     `publish_tf: true` would publish the same transform. Only one can own it; probably remove the
+     `/tf` bridge line or turn off one of them.
+   - The real IMU (MPU6050 per old comments) has no compass heading, but navsat_transform needs a
+     heading reference. The sim IMU may supply one and hide this. Revisit before hardware.
+   - Sim odom and GPS covariances are all zeros; check how the EKF behaves.
+   - `use_sim_time: true` is hard-coded; the real rover needs false (make it a launch argument).
+2. Scan-gating node: republish `/scan` as `/scan_filtered` only while the lift is fully down.
+   Sim signal: lift joint position. Real signal: limit switch via ESP32. Same topic for both.
+3. Nav2 params in `rover_bringup/config/`: update the footprint (~0.66 m wide with wheels), set
+   `minimum_turning_radius` from the real steering limit, feed the ultrasonics to a range obstacle layer
+   (the LIDAR is blind below ~0.57 m), and check the MPPI controller's CPU cost on the Pi.
+4. Boundary roaming + stuck recovery, then the ESP32 firmware and Pi hardware bridge.
+- SLAM and the GPS EKF both own `map -> odom`: run SLAM as a separate mapping mode.
+- Old files not yet reviewed: `Rover_Documentation.docx`, `ackermann_bt.xml`, `ackermann_through_poses_bt.xml`.
+- New chat: paste this file first, plus the file being edited.
+
 
 ## Ideas for later (not committed to)
 - SLAM (slam_toolbox) as an optional branch after GPS navigation works. Not needed for the
