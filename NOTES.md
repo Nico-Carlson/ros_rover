@@ -171,6 +171,10 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   2 m tall), `rock_1` (0.5 m tall) and `boulder_1` (0.9 m tall). Verified: the LIDAR scan plane is at
   ~0.57 m (chassis top 0.537 + 0.03), so it misses `rock_1` but sees the boulder. Anything lower
   than ~0.57 m is a blind spot for the 2D LIDAR; the ultrasonics are meant to cover it.
+- `stump_1` (0.4 m square, 0.5 m tall, at (2.5, 0)) sits directly ahead of the spawn point.
+  Verified: all five `/us/front_mid` rays read ~1.39 to 1.40 m, while the LIDAR does not see it
+  (it only appears if the rover is pushed into the ground in Gazebo). This confirms the LIDAR plane
+  is above 0.5 m, so low obstacles rely on the ultrasonics.
 
 
 
@@ -189,6 +193,23 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   steering servo, an RC receiver (7 channels), and the lift controller (relay, limit
   switches). Sensor ESP handles ultrasonics, gyro (I2C), battery voltage, and an override
   switch.
+
+
+## Ultrasonics (branch `ultrasonics`, in progress)
+- Six frames `us_front_left/mid/right` and `us_rear_left/mid/right` on `base_link` in
+`rover.urdf.xacro`. Mounted 3 in (0.0762 m) above the top of the wheels (z = wheel_radius + 0.0762
+from `base_link`), 0.15 m left/right of center, outer sensors angled 0.26 rad outward.
+All positions are PLACEHOLDERS except the 3 in height. Rear set faces backward (yaw pi).
+- They sit below the LIDAR plane (~0.57 m), so they should see low obstacles like `rock_1`.
+- Done: each ultrasonic is simulated as a 5-ray `gpu_lidar` (cone +/-0.131 rad, range 0.03 to 4 m,
+  10 Hz, all PLACEHOLDERS) defined by a macro in `rover.gazebo.xacro`, bridged as
+  `sensor_msgs/msg/LaserScan` on `/us/front_left|mid|right` and `/us/rear_left|mid|right`.
+  Verified: `/us/front_mid` center ray reads 3.84 m to `tree_1`, matching the hand calculation.
+- TODO: convert to `sensor_msgs/msg/Range` (what the ESP32 firmware will publish) when we build the
+  hardware bridge. The LaserScan form is fine for the sim.
+- Design consequence: anything under ~0.57 m is invisible to the LIDAR, and the ultrasonics only cover
+  the front and rear faces at short range. Nav2 will need a range-sensor obstacle layer fed by the
+  ultrasonics (to be designed when we reach navigation).
 
 
 

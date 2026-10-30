@@ -38,6 +38,13 @@
   <xacro:property name="gps_y" value="0.0"/>
   <xacro:property name="gps_z" value="${chassis_top_z + 0.15}"/>
 
+    <!-- Ultrasonics: PLACEHOLDER positions. z is 3 in above the top of the wheels -->
+  <xacro:property name="us_z" value="${wheel_radius + 0.0762}"/>
+  <xacro:property name="us_front_x" value="${wheelbase / 2 + chassis_length / 2 + 0.01}"/>
+  <xacro:property name="us_rear_x" value="${wheelbase / 2 - chassis_length / 2 - 0.01}"/>
+  <xacro:property name="us_side_y" value="0.15"/>
+  <xacro:property name="us_angle" value="0.26"/>
+
   <material name="chassis_grey">
     <color rgba="0.5 0.5 0.55 1.0"/>
   </material>
@@ -216,5 +223,33 @@
   </joint>
   
   <xacro:include filename="$(find rover_description)/urdf/rover.gazebo.xacro"/>
+
+  <!-- ===== Ultrasonic sensors ===== -->
+  <material name="us_green">
+    <color rgba="0.1 0.6 0.2 1.0"/>
+  </material>
+
+  <xacro:macro name="ultrasonic" params="id x y yaw">
+    <link name="us_${id}">
+      <visual>
+        <geometry>
+          <box size="0.02 0.045 0.02"/>
+        </geometry>
+        <material name="us_green"/>
+      </visual>
+    </link>
+    <joint name="us_${id}_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="us_${id}"/>
+      <origin xyz="${x} ${y} ${us_z}" rpy="0 0 ${yaw}"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:ultrasonic id="front_left" x="${us_front_x}" y="${us_side_y}" yaw="${us_angle}"/>
+  <xacro:ultrasonic id="front_mid" x="${us_front_x}" y="0" yaw="0"/>
+  <xacro:ultrasonic id="front_right" x="${us_front_x}" y="${-us_side_y}" yaw="${-us_angle}"/>
+  <xacro:ultrasonic id="rear_left" x="${us_rear_x}" y="${us_side_y}" yaw="${pi - us_angle}"/>
+  <xacro:ultrasonic id="rear_mid" x="${us_rear_x}" y="0" yaw="${pi}"/>
+  <xacro:ultrasonic id="rear_right" x="${us_rear_x}" y="${-us_side_y}" yaw="${pi + us_angle}"/>
 
 </robot>
