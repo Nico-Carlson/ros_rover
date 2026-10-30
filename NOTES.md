@@ -167,9 +167,10 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   perfect). Both odom and GPS covariances need handling in the EKF step.
 - World is still a flat empty plane. Add obstacles/trees before testing navigation.
 - Branch goal complete: drive, steering, LIDAR, IMU, GPS, joint states all verified in Gazebo.
-- Obstacle world (branch `obstacle-world`, in progress): `tree_1` static cylinder at (5, 0).
-  Verified the LIDAR sees it (arc about 4.4 m ahead in RViz).
-
+- Done: obstacle world (tag `obstacle-world-v1`): `tree_1` to `tree_4` (cylinders, r 0.2 to 0.35 m,
+  2 m tall), `rock_1` (0.5 m tall) and `boulder_1` (0.9 m tall). Verified: the LIDAR scan plane is at
+  ~0.57 m (chassis top 0.537 + 0.03), so it misses `rock_1` but sees the boulder. Anything lower
+  than ~0.57 m is a blind spot for the 2D LIDAR; the ultrasonics are meant to cover it.
 
 
 
