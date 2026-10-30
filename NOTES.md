@@ -85,8 +85,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   editing, print the plugin block with `sed -n` and check the nesting by eye.
 - The LIDAR scans a flat plane at `lidar_link` height. Anything at that height blocks it, and the
   sim LIDAR also appeared to detect the GPS box, which has a visual but no collision (guess:
-  gpu_lidar renders the scene). The sim GPS was moved up (`gps_z` = chassis top + 0.15) to clear
-  the scan plane. On the real rover, keep the GPS, IMU, and any mast out of the LIDAR's plane.
+  the scan plane. On the real roThe sim GPS sits flat on the chassis (`gps_z` = chassis top + 0.01), 1 cm under the scan plane.ver, keep the GPS, IMU, and any mast out of the LIDAR's plane.
 - RViz started by hand needs `--ros-args -p use_sim_time:=true` when the sim is running, or it
   shows nothing.
 
