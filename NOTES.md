@@ -46,6 +46,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - [x] ROS basics (rover_basics package: publisher, subscriber, launch file)
 - [x] rover_description: chassis, 4 wheels, steering, sensors, lift, RViz launch
 - [x] Gazebo simulation (Ackermann drive, LIDAR, IMU, GPS)
+- [x] SLAM in the sim (slam_toolbox online_async)
 - [ ] EKF + navsat_transform
 - [ ] Nav2 (reuse old params; footprint must be updated, wheels make it wider than 0.56)
 - [ ] Boundary roaming + stuck recovery
@@ -216,6 +217,21 @@ All positions are PLACEHOLDERS except the 3 in height. Rear set faces backward (
 - Exact ultrasonic part (model number) is unknown, so their range/cone are still placeholders.
 - Which RPLIDAR S2 variant (30 m or 18 m) is on the rover; check the label.
 - Where the real GPS antenna sits (a forest rover probably needs it up on a mast).
+
+
+## SLAM (branch `slam-mapping`, in progress)
+- `rover_bringup/config/slam_mapping.yaml` is a copy of the stock slam_toolbox
+  `mapper_params_online_async.yaml`. Only change so far: `max_laser_range` 20 -> 10 (S2 reaches ~10 m on
+  dark targets). Frames already matched: odom, map, base_footprint, `/scan`.
+- Verified in sim: the three trees and the boulder map in the right places and stay fixed while driving
+  with `ros2 run teleop_twist_keyboard teleop_twist_keyboard` (avoid `j`/`l`, which turn in place; press
+  `k` to stop, since the sim keeps the last command). RViz: Fixed Frame `map`, Map display on `/map`
+  with Durability `Transient Local`.
+- Caveat: sim odometry is perfect (no slip, zero covariance), so this is the easy case. Pi CPU load
+  with SLAM is unmeasured.
+- Open design decision: SLAM and the GPS EKF both want to own `map -> odom`. Plan: SLAM is a separate
+  mapping mode, not run together with GPS navigation.
+
 
 ## Ideas for later (not committed to)
 - SLAM (slam_toolbox) as an optional branch after GPS navigation works. Not needed for the
