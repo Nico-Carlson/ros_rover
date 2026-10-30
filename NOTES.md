@@ -83,6 +83,14 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - In the world file, every `<plugin>` must be a sibling. A plugin line pasted between another
   plugin's opening and closing tags is silently ignored (this disabled the IMU once). After
   editing, print the plugin block with `sed -n` and check the nesting by eye.
+- The LIDAR scans a flat plane at `lidar_link` height. Anything at that height blocks it, and the
+  sim LIDAR also appeared to detect the GPS box, which has a visual but no collision (guess:
+  gpu_lidar renders the scene). The sim GPS was moved up (`gps_z` = chassis top + 0.15) to clear
+  the scan plane. On the real rover, keep the GPS, IMU, and any mast out of the LIDAR's plane.
+- RViz started by hand needs `--ros-args -p use_sim_time:=true` when the sim is running, or it
+  shows nothing.
+
+
 
 ## Mistakes already made (don't repeat)
 - ROS 2 has NO fish setup script. Use zsh with `setup.zsh`.
@@ -159,6 +167,8 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   perfect). Both odom and GPS covariances need handling in the EKF step.
 - World is still a flat empty plane. Add obstacles/trees before testing navigation.
 - Branch goal complete: drive, steering, LIDAR, IMU, GPS, joint states all verified in Gazebo.
+- Obstacle world (branch `obstacle-world`, in progress): `tree_1` static cylinder at (5, 0).
+  Verified the LIDAR sees it (arc about 4.4 m ahead in RViz).
 
 
 

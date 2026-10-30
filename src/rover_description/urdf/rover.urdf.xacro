@@ -36,7 +36,7 @@
 
   <xacro:property name="gps_x" value="0.0"/>
   <xacro:property name="gps_y" value="0.0"/>
-  <xacro:property name="gps_z" value="${chassis_top_z + 0.03}"/>
+  <xacro:property name="gps_z" value="${chassis_top_z + 0.15}"/>
 
   <material name="chassis_grey">
     <color rgba="0.5 0.5 0.55 1.0"/>
