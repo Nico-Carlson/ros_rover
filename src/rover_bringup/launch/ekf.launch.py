@@ -17,4 +17,12 @@ def generate_launch_description():
         parameters=[ekf_params, {"use_sim_time": True}],
     )
 
-    return LaunchDescription([ekf])
+    navsat = Node(
+        package="robot_localization",
+        executable="navsat_transform_node",
+        name="navsat_transform",
+        output="screen",
+        parameters=[ekf_params, {"use_sim_time": True}],
+    )
+
+    return LaunchDescription([ekf, navsat])
