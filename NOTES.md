@@ -222,8 +222,13 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Verified (one short drive from a clean start): vs Gazebo's true pose, `/odom` was off ~12 cm / +3.5 deg
   and `/odometry/filtered` ~1 cm / +0.6 deg. The sim odometry seems to overestimate turning (IMU yaw
   rate reads ~8% below it), and the EKF follows the IMU. Single run, mild sim noise: not an accuracy claim.
-- Next: check the sim IMU's orientation output (does it report an absolute heading?), then add GPS via
-  `navsat_transform`.
+- Verified: the sim IMU orientation follows the rover (ENU, yaw 0 = facing east). After a left turn the IMU
+  read ~99 deg and `/odom` ~107 deg (~7% less turning on the IMU, matching the 8% yaw-rate gap). Likely the
+  odometry plugin overestimates; consistent with the ground-truth test. Orientation covariance is all zeros.
+- Sim vs real: the sim IMU acts as a perfect compass. The real IMU (MPU6050?) probably has no heading, so
+  GPS fusion needs another heading source on hardware.
+- Next: add `navsat_transform` (GPS to `/odometry/gps`).
+
 
 ## Old files (uploaded earlier, NOT trusted, reuse selectively)
 - `ekf.yaml`: dual-EKF design (`ekf_filter_node` in odom, `ekf_filter_node_map` in map fusing
