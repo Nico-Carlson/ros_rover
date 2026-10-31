@@ -46,7 +46,7 @@ def generate_launch_description():
             "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock",
             "/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist",
             "/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry",
-            "/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
+            # "/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",      EKF now owns odom -> base_footprint
             "/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan",
             "/joint_states@sensor_msgs/msg/JointState[gz.msgs.Model",
             "/imu@sensor_msgs/msg/Imu[gz.msgs.IMU",

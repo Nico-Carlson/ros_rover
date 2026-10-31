@@ -235,6 +235,16 @@ All positions are PLACEHOLDERS except the 3 in height. Rear set faces backward (
   `use_sim_time:=true` (hard-coded; make it a launch argument for the real rover).
 
 
+## Localization (branch `ekf-localization`, in progress)
+- `rover_bringup/config/ekf.yaml`: single EKF (`ekf_filter_node`, frame `odom`) fusing `/odom` forward
+  speed + yaw rate and `/imu` yaw rate only. GPS not added yet. `use_sim_time` is passed from
+  `launch/ekf.launch.py`, not the YAML.
+- The `/tf` bridge line in `sim.launch.py` is commented out so the EKF owns `odom -> base_footprint`.
+  If transforms break, that line is the first suspect.
+- Verified (rover stationary): `/tf` publishers are only `ekf_filter_node` and `robot_state_publisher`;
+  `/odometry/filtered` ~29 Hz; yaw wanders ~0.03 to 0.05 deg from integrating simulated IMU noise.
+- Next: drive and compare `/odom` vs `/odometry/filtered`, then add GPS via `navsat_transform`.
+
 ## Where we stopped / next steps (in order)
 1. Localization, branch `ekf-localization`: copy the old `ekf.yaml` into `rover_bringup/config/`.
    Likely problems in the old file (NOT yet tested in the sim):
