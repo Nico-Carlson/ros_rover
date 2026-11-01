@@ -300,6 +300,14 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   switches). Sensor ESP handles ultrasonics, gyro (I2C), battery voltage, and an override
   switch.
 
+## No wheel encoders on the real rover (stated by me, replaces the odometry plan)
+- The real rover has NO wheel encoders, so no real `/odom` forward speed. The sim's wheel odometry is a
+  sim-only source. Everything that fuses or compares `/odom` (both EKFs, the wheel-vs-GPS stuck idea) needs a
+  hardware plan.
+- Candidate speed sources (unevaluated): GPS velocity, LIDAR scan-matching odometry, commanded speed
+  (open-loop), or adding hall sensors/encoders.
+- Before more sim noise work, decide what the EKF fuses on hardware, so the sim matches it.
+
 ## Open questions
 - Exact ultrasonic part (model number) is unknown, so their range/cone are still placeholders.
 - Which RPLIDAR S2 variant (30 m or 18 m) is on the rover; check the label.
