@@ -234,11 +234,15 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   `/odom` 0.985, `/odometry/filtered` 0.947. GPS stayed correct. An earlier unexplained 1 m error was almost
   certainly the same thing (rover against the stump). Idea for the unstick behavior: a gap between wheel
   odometry speed and GPS-derived speed means the wheels are slipping or blocked.
-- Plan (Nav2's dual-EKF pattern, checked against its Jazzy example): `ekf_filter_node` (odom frame) outputs
-  `odometry/local`; a second `ekf_filter_node_map` (map frame, fuses `/odom`, `/imu`, and `/odometry/gps` x/y)
-  outputs `odometry/global` and owns `map -> odom`; `navsat_transform` reads `odometry/global`. Not lifecycle
-  nodes on Jazzy. Once done, `/odometry/filtered` no longer exists.
-- Likely rough edge: the bridge zeroes GPS covariance, so the map EKF may trust GPS too much. Check first.
+- Done: dual EKF (Nav2 pattern, checked against its Jazzy example; these nodes are not lifecycle nodes on
+  Jazzy). `ekf_filter_node` (odom frame, remapped to `/odometry/local`) fuses `/odom` + `/imu` and owns
+  `odom -> base_footprint`. `ekf_filter_node_map` (map frame, `/odometry/global`) also fuses `/odometry/gps`
+  x/y and owns `map -> odom`. `navsat_transform` reads `odometry/global`. `/odometry/filtered` no longer exists.
+  Verified at rest: three nodes, three topics, `map -> base_footprint` ~zero.
+- GOTCHA: pasting a new YAML block with the editor can replace the file instead of appending. After editing,
+  check the keys: `python3 -c "import yaml; print(list(yaml.safe_load(open('src/rover_bringup/config/ekf.yaml')).keys()))"`
+  should print all three node names. A node name that isn't a YAML key silently runs with defaults.
+- Next: drive into the stump and compare `/odometry/local` vs `/odometry/global` vs Gazebo's truth.
 
 
 ## Old files (uploaded earlier, NOT trusted, reuse selectively)

@@ -9,12 +9,22 @@ def generate_launch_description():
     bringup_share = get_package_share_directory("rover_bringup")
     ekf_params = os.path.join(bringup_share, "config", "ekf.yaml")
 
-    ekf = Node(
+    ekf_odom = Node(
         package="robot_localization",
         executable="ekf_node",
         name="ekf_filter_node",
         output="screen",
         parameters=[ekf_params, {"use_sim_time": True}],
+        remappings=[("odometry/filtered", "odometry/local")],
+    )
+
+    ekf_map = Node(
+        package="robot_localization",
+        executable="ekf_node",
+        name="ekf_filter_node_map",
+        output="screen",
+        parameters=[ekf_params, {"use_sim_time": True}],
+        remappings=[("odometry/filtered", "odometry/global")],
     )
 
     navsat = Node(
@@ -23,6 +33,7 @@ def generate_launch_description():
         name="navsat_transform",
         output="screen",
         parameters=[ekf_params, {"use_sim_time": True}],
+        remappings=[("odometry/filtered", "odometry/global")],
     )
 
-    return LaunchDescription([ekf, navsat])
+    return LaunchDescription([ekf_odom, ekf_map, navsat])
