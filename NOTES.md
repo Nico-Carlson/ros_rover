@@ -6,8 +6,9 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 (2) roam inside a boundary, (3) get unstuck. Mapping is secondary.
 
 ## Stack
-- ROS 2 Jazzy + Gazebo Harmonic, Ubuntu 24.04 
-- Hardware: Pi 5, 2x ESP32 (Arduino IDE, C++), RPLIDAR S2, GPS, IMU, 6 ultrasonics (removed for now)
+- ROS 2 Jazzy + Gazebo Harmonic, Ubuntu 24.04 in a distrobox on Arch (Hyprland)
+- Hardware: Pi 5, 2x ESP32 (Arduino IDE, C++), RPLIDAR S2, GPS, IMU (MPU6050 per old
+  comments, unverified), 6 ultrasonics (removed from the real rover for now; simulated)
 - Pi code in Python, firmware in C++
 
 ## Environment quirks
@@ -18,9 +19,19 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   (`xwayland.force_zero_scaling = true` keeps RViz sharp at 0.67 monitor scale)
 - Do NOT set QT_SCALE_FACTOR (causes black flashing in RViz)
 
+## Quick start (sim)
+1. `ros2 launch rover_description sim.launch.py` (wait ~10 s)
+2. `ros2 launch rover_bringup ekf.launch.py` (or `slam.launch.py` for mapping)
+3. RViz: `ros2 run rviz2 rviz2 -d ~/rover_ws/src/rover_description/rviz/rover.rviz --ros-args -p use_sim_time:=true`
+4. Drive: `ros2 run teleop_twist_keyboard teleop_twist_keyboard` (avoid `j`/`l`; press `k` to stop)
+- Stop everything with Ctrl+C in each launch terminal. Closing the Gazebo window does NOT stop the sim.
+
 ## Git conventions
 - `main` always works; one descriptive branch per piece of work (no phase numbers)
-- Commit after each working step; merge to main when a branch's goal is done
+- Commit after each working step; merge to main (`--no-ff`) when a branch's goal is done
+- Tag each finished milestone before deleting any branch. Tags so far: `robot-model-v1`,
+  `gazebo-sim-v1`, `obstacle-world-v1`, `ultrasonics-v1`, `slam-mapping-v1`
+- Finished branches still exist (all merged). Deleting them is optional; the tags preserve the work.
 
 ## Frame conventions
 - `base_footprint`: on the ground under the rear axle center
@@ -36,21 +47,30 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 | Track width | 0.559 | measured (overlaps chassis width, recheck) |
 | Wheel radius / width | 0.15875 / 0.1016 | measured |
 | Chassis L x W x H | 1.118 x 0.562 x 0.457 | measured |
+| Ultrasonic mounting height | 3 in (0.0762 m) above the top of the wheels | measured |
 | Total mass | ~30 kg | PLACEHOLDER |
 | Ground clearance | 0.08 | PLACEHOLDER |
 | Max steer angle | 0.7 rad | PLACEHOLDER |
-| LIDAR / GPS / IMU positions | see xacro | PLACEHOLDER |
+| Lift platform mass / size / speed | 5 kg / 0.4 x 0.4 m / 0.05 m/s | PLACEHOLDER |
+| Ultrasonic positions, angles, cone | see xacro | PLACEHOLDER |
+| LIDAR / GPS / IMU positions | see xacro (GPS flat on the chassis) | PLACEHOLDER |
 
 ## Status
 - [x] ROS 2, Gazebo, shell, git set up
 - [x] ROS basics (rover_basics package: publisher, subscriber, launch file)
 - [x] rover_description: chassis, 4 wheels, steering, sensors, lift, RViz launch
-- [x] Gazebo simulation (Ackermann drive, LIDAR, IMU, GPS)
+- [x] Gazebo simulation (Ackermann drive, LIDAR, IMU, GPS, joint states)
+- [x] Obstacle world and simulated ultrasonics
 - [x] SLAM in the sim (slam_toolbox online_async)
-- [ ] EKF + navsat_transform
+- [x] EKF (wheel odometry + IMU yaw rate)
+- [x] GPS fusion wiring in the sim (dual EKF, corrects blocked-wheel error)
+- [ ] Realistic sim sensor noise and covariances (GPS, IMU, odometry) and a retest of the fusion
+- [ ] Heading source for GPS fusion on real hardware (real IMU likely has no compass)
+- [ ] Scan-gating node (lift down only)
 - [ ] Nav2 (reuse old params; footprint must be updated, wheels make it wider than 0.56)
 - [ ] Boundary roaming + stuck recovery
-- [ ] ESP32 firmware + Pi hardware bridge
+- [ ] Replace placeholder measurements and sensor specs with real ones
+- [ ] ESP32 firmware (with watchdog) + Pi hardware bridge
 - [ ] Field testing
 
 
@@ -74,23 +94,30 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - After creating a NEW package, open a new terminal (or `source ~/.config/zsh/.zshrc`).
 - A stale launch left running causes odd symptoms (old GUI, wheels stacked at
   the origin). Check with `ros2 node list` and `pkill -f` if needed.
+- Closing the Gazebo window does NOT stop the sim: the server, bridge, and robot_state_publisher keep
+  running and the rover keeps its position on relaunch. Stop with Ctrl+C in the launch terminal; if stuck:
+  `pkill -9 -f "gz sim"; pkill -9 -f parameter_bridge; pkill -9 -f robot_state_publisher; pkill -9 -f ekf_node`.
+  (`pgrep` needs `-f` for names longer than 15 characters.)
 - Xacro macros must be defined above the lines that call them. Properties can
   only use properties defined above them.
 - Launch files need their folder installed (`data_files` in setup.py for Python
-  packages, `install(DIRECTORY ...)` in CMakeLists.txt for rover_description).
+  packages, `install(DIRECTORY ...)` in CMakeLists.txt for the CMake packages).
 - `$(find rover_description)` in xacro resolves to the INSTALLED copy. After editing any
   xacro, run `colcon build` BEFORE testing it with `xacro` or `gz sdf`, or the check reads
   stale files and misleads you.
+- A block pasted outside `</robot>` or `</world>` is silently ignored. After editing, check with
+  `grep -n` that the new block's line number is smaller than the closing tag's.
 - In the world file, every `<plugin>` must be a sibling. A plugin line pasted between another
   plugin's opening and closing tags is silently ignored (this disabled the IMU once). After
   editing, print the plugin block with `sed -n` and check the nesting by eye.
 - The LIDAR scans a flat plane at `lidar_link` height. Anything at that height blocks it, and the
-  sim LIDAR also appeared to detect the GPS box, which has a visual but no collision (guess:
-  the scan plane. On the real roThe sim GPS sits flat on the chassis (`gps_z` = chassis top + 0.01), 1 cm under the scan plane.ver, keep the GPS, IMU, and any mast out of the LIDAR's plane.
+  sim LIDAR also appeared to detect the GPS box, which has a visual but no collision (guess: gpu_lidar
+  renders the scene). The sim GPS now sits flat on the chassis (`gps_z` = chassis top + 0.01), 1 cm under
+  the scan plane. On the real rover, keep the GPS, IMU, and any mast out of the LIDAR's plane.
 - RViz started by hand needs `--ros-args -p use_sim_time:=true` when the sim is running, or it
   shows nothing.
-
-
+- The EKF's pose starts at (0, 0, 0) whenever it launches, so comparisons against Gazebo or `/odom` are only
+  meaningful when the sim and EKF were both started fresh before the rover moved.
 
 ## Mistakes already made (don't repeat)
 - ROS 2 has NO fish setup script. Use zsh with `setup.zsh`.
@@ -102,160 +129,171 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 ## Repo layout
 - Repo: github.com/Nico-Carlson/ros_rover (private), local folder `~/rover_ws`
 - `src/rover_basics`: ament_python practice package (hello publisher/subscriber)
-- `src/rover_description`: ament_cmake. `urdf/rover.urdf.xacro`, `launch/display.launch.py`,
-  `rviz/rover.rviz`
+- `src/rover_description`: ament_cmake. `urdf/rover.urdf.xacro` (model), `urdf/rover.gazebo.xacro`
+  (Gazebo plugins and sensors), `worlds/rover_world.sdf`, `launch/display.launch.py` (RViz view),
+  `launch/sim.launch.py` (Gazebo + spawn + bridge), `rviz/rover.rviz`
+- `src/rover_bringup`: ament_cmake. `config/slam_mapping.yaml`, `config/ekf.yaml`,
+  `launch/slam.launch.py`, `launch/ekf.launch.py`
 - Measurements live as `xacro:property` values at the top of the xacro. Edit those,
   not the geometry.
 
 ## Gazebo simulation (done, tag gazebo-sim-v1)
 - Verified installed: Gazebo Sim 8.15.0, ros_gz (ros_gz_sim, ros_gz_bridge,
   ros_gz_image, ros_gz_interfaces), robot_localization.
-- Plan: Gazebo tags live in a separate `urdf/rover.gazebo.xacro` in
-  rover_description, included from `rover.urdf.xacro`. World and sim launch file
-  to follow.
+- Gazebo tags live in `urdf/rover.gazebo.xacro`, included from `rover.urdf.xacro`.
 - Old `robot.gazebo` uses the old model's names. Translate when reusing:
   `wheel1/2_joint` -> `rear_right/left_wheel_joint`, `body_link` -> `base_link`,
   `wheel_separation` -> `track_width`, `wheelbase_length` -> `wheelbase`,
   `steering_limit` 0.785 -> `max_steer_angle` (0.7, placeholder).
-- Plugin tag names (AckermannSteering, JointStatePublisher, Imu, Sensors, navsat)
-  come from the old file and memory; verify against the Gazebo Harmonic docs.
-- Done: `urdf/rover.gazebo.xacro` has wheel friction (mu1/mu2 1.0) and the
-  AckermannSteering plugin. The xacro converts and validates
-  (`xacro ... > /tmp/rover.urdf && gz sdf -k /tmp/rover.urdf`), but the plugin is
-  NOT yet tested in a running sim.
-- Done: `worlds/rover_world.sdf` has 1 ms physics, the Physics, UserCommands and
-  SceneBroadcaster systems, a sun, and a 100 m x 100 m ground plane. It loads with
-  `gz sim -r <installed path>`. `worlds` is installed in CMakeLists.txt.
-- Everything in a world file must sit between `<world>` and `</world>`. The error
-  "Root object can only contain one of model, light or actor" means something is outside.
-- Still to add to the world: Sensors, Imu and NavSat systems, once those sensors exist
-  in the xacro.
-- Done: `launch/sim.launch.py` starts Gazebo with the world (`-r`), runs
-  robot_state_publisher with `use_sim_time`, and spawns the rover with
-  `ros_gz_sim create` (`-topic robot_description -z 0.3`). Spawn works. The
-  "gazebo process has died, exit code -2" message on Ctrl+C is harmless.
-- Done: bridge node in `sim.launch.py` (`ros_gz_bridge parameter_bridge`) for `/clock`,
-  `/cmd_vel` (ROS to Gazebo, `]`), `/odom`, `/tf` (Gazebo to ROS, `[`). Gazebo expands the
-  plugin's relative topic names to `/cmd_vel`, `/odom`, `/tf`, `/clock` (checked with
-  `gz topic -l`). Verified: `/clock` and `/odom` arrive in ROS.
-- Sim odom covariance is all zeros. Revisit when configuring the EKF.
-- `/joint_states` has no publisher yet (needs the Gazebo JointStatePublisher plugin + bridge).
-- Verified: publishing `/cmd_vel` (linear x 0.3) drives the rover straight and `/odom` x increases.
-  The sim plugin keeps the LAST command until a new one arrives (it only stopped when a zero
-  command was sent). The real firmware needs a command-timeout watchdog that stops the motors.
-- Verified: steering works (linear 0.3 + angular 0.3 drives a curve, front wheels turn,
-  circle size looks right). Ackermann can't turn in place, so always send forward speed with turn rate.
-- Done: `Sensors` system (ogre2) added to the world. `gpu_lidar` sensor on `lidar_link` in
-  `rover.gazebo.xacro` publishes `/scan` (gz.msgs.LaserScan,   LIDAR now follows the RPLIDAR S2 spec: 3200 samples (0.1125 deg), 10 Hz, range 0.05 to 10 m
-  (the S2's 30 m is for bright targets only; dark forest targets give ~10 m). Verified in the sim.
-  The S2 also has +/-1.5 deg scan-plane flatness and +/-30 mm accuracy, not yet modeled. Gazebo merges `lidar_link` into
-  `lift_platform` (fixed-joint lumping), so `gz_frame_id` is set to keep the frame name.
-  `gz_frame_id` triggers a harmless "not defined in SDF" warning.
-- Done: `/scan` bridged to ROS (`sensor_msgs/msg/LaserScan`, Gazebo to ROS). Verified: ~10 Hz and
-  `frame_id: lidar_link`.
-- Done: `JointStatePublisher` plugin in `rover.gazebo.xacro` publishes all joints, bridged to
-  `/joint_states` (`sensor_msgs/msg/JointState[gz.msgs.Model`). Verified: TF `base_link` to
-  `lidar_link` = (0.343, 0, 0.408) with the lift down. Without joint states the lift and wheel
+- Plugin tags: AckermannSteering, JointStatePublisher, and NavSat were checked against the Gazebo docs;
+  Imu and Sensors are confirmed by working in the sim.
+- `worlds/rover_world.sdf`: 1 ms physics; Physics, UserCommands, SceneBroadcaster, Sensors (ogre2), Imu and
+  NavSat systems; `<spherical_coordinates>` origin lat 45.0, lon -110.0 (PLACEHOLDER, set to the real test
+  site later; ENU); a sun; a 100 m x 100 m ground plane; obstacles (below). Everything must sit between
+  `<world>` and `</world>`; the error "Root object can only contain one of model, light or actor" means
+  something is outside.
+- `launch/sim.launch.py`: starts Gazebo with the world (`-r`), runs robot_state_publisher with
+  `use_sim_time`, spawns the rover with `ros_gz_sim create` (`-topic robot_description -z 0.3`), and runs
+  the bridge. The "gazebo process has died, exit code -2" message on Ctrl+C is harmless.
+- Bridge (`ros_gz_bridge parameter_bridge`): `/clock`, `/odom`, `/scan`, `/joint_states`, `/imu`, `/gps/fix`
+  and the six `/us/*` topics go Gazebo to ROS (`[`); `/cmd_vel` goes ROS to Gazebo (`]`). The `/tf` line is
+  commented out so the EKF owns `odom -> base_footprint` (first suspect if transforms break). Gazebo expands
+  the plugin's relative topic names to top-level topics (`/cmd_vel`, `/odom`, `/scan`, ...); check with
+  `gz topic -l`.
+- Verified: publishing `/cmd_vel` (linear x 0.3) drives the rover straight and `/odom` x increases. The sim
+  plugin keeps the LAST command until a new one arrives (it only stopped when a zero command was sent). The
+  real firmware needs a command-timeout watchdog that stops the motors.
+- Verified: steering works (linear 0.3 + angular 0.3 drives a curve, front wheels turn, circle size looks
+  right). Ackermann can't turn in place, so always send forward speed with turn rate.
+- LIDAR: `Sensors` system (ogre2) in the world, `gpu_lidar` on `lidar_link`, publishes `/scan`
+  (gz.msgs.LaserScan). Follows the RPLIDAR S2 spec: 3200 samples (0.1125 deg), 10 Hz, range 0.05 to 10 m
+  (the S2's 30 m is for bright targets only; dark forest targets give ~10 m). Verified: ~10 Hz and
+  `frame_id: lidar_link`. The S2's +/-1.5 deg scan-plane flatness and +/-30 mm accuracy are not modeled.
+  Gazebo merges `lidar_link` into `lift_platform` (fixed-joint lumping), so `gz_frame_id` is set to keep the
+  frame name. `gz_frame_id` triggers a harmless "not defined in SDF" warning.
+- Joint states: `JointStatePublisher` plugin publishes all joints, bridged to `/joint_states`. Verified: TF
+  `base_link` to `lidar_link` = (0.343, 0, 0.408) with the lift down. Without joint states the lift and wheel
   frames sit in a disconnected TF tree.
-- Done: simulated IMU. `gz-sim-imu-system` in the world, `imu` sensor on `imu_link` in
-  `rover.gazebo.xacro` (noise values are PLACEHOLDERS), bridged as `/imu`
-  (`sensor_msgs/msg/Imu[gz.msgs.IMU`). Verified: ~100 Hz, `frame_id: imu_link`, z accel ~9.8.
-- Done: simulated GPS. `gz-sim-navsat-system` plus `<spherical_coordinates>` (origin lat 45.0,
-  lon -110.0, PLACEHOLDER; set to the real test site later, ENU orientation) in the world, and a
-  `navsat` sensor on `gps_link` publishing `gps/fix`, bridged as `/gps/fix`
-  (`sensor_msgs/msg/NavSatFix[gz.msgs.NavSat`). Verified: ~10 Hz, `frame_id: gps_link`.
-- Known gaps: the bridge zeroes `position_covariance`, and the sim GPS has no noise (unrealistically
-  perfect). Both odom and GPS covariances need handling in the EKF step.
-- World is still a flat empty plane. Add obstacles/trees before testing navigation.
-- Branch goal complete: drive, steering, LIDAR, IMU, GPS, joint states all verified in Gazebo.
-- Done: obstacle world (tag `obstacle-world-v1`): `tree_1` to `tree_4` (cylinders, r 0.2 to 0.35 m,
-  2 m tall), `rock_1` (0.5 m tall) and `boulder_1` (0.9 m tall). Verified: the LIDAR scan plane is at
-  ~0.57 m (chassis top 0.537 + 0.03), so it misses `rock_1` but sees the boulder. Anything lower
-  than ~0.57 m is a blind spot for the 2D LIDAR; the ultrasonics are meant to cover it.
-- `stump_1` (0.4 m square, 0.5 m tall, at (2.5, 0)) sits directly ahead of the spawn point.
-  Verified: all five `/us/front_mid` rays read ~1.39 to 1.40 m, while the LIDAR does not see it
-  (it only appears if the rover is pushed into the ground in Gazebo). This confirms the LIDAR plane
-  is above 0.5 m, so low obstacles rely on the ultrasonics.
+- IMU: `imu` sensor on `imu_link` (noise values are PLACEHOLDERS), bridged as `/imu`. Verified: ~100 Hz,
+  `frame_id: imu_link`, z accel ~9.8.
+- GPS: `navsat` sensor on `gps_link` publishing `gps/fix`, bridged as `/gps/fix`. Verified: ~10 Hz,
+  `frame_id: gps_link`.
+- Known gaps: the bridge zeroes `position_covariance`, the sim GPS has no noise (unrealistically perfect),
+  and sim odom covariance is all zeros. All three need handling in the EKF work.
 
+## Obstacle world (done, tag obstacle-world-v1)
+- `tree_1` (5, 0), `tree_2` (8, -3), `tree_3` (8, 3), `tree_4` (12, 0.5): cylinders, r 0.2 to 0.35 m, 2 m tall.
+  `rock_1` (3, 3): 0.5 m tall. `boulder_1` (3, -3): 0.9 m tall. `stump_1` (2.5, 0): 0.4 m square, 0.5 m tall,
+  directly ahead of the spawn point.
+- Verified: the LIDAR scan plane is at ~0.57 m (chassis top 0.537 + 0.03), so it sees the boulder but misses
+  `rock_1` and `stump_1` (those only appear if the rover is pushed into the ground in Gazebo). Anything lower
+  than ~0.57 m is a blind spot for the 2D LIDAR; the ultrasonics are meant to cover it.
+
+## Ultrasonics (done, tag ultrasonics-v1)
+- Six frames `us_front_left/mid/right` and `us_rear_left/mid/right` on `base_link` in `rover.urdf.xacro`.
+  Mounted 3 in (0.0762 m) above the top of the wheels, 0.15 m left/right of center, outer sensors angled
+  0.26 rad outward, rear set faces backward (yaw pi). All positions are PLACEHOLDERS except the height.
+- Simulated as 5-ray `gpu_lidar` fans (cone +/-0.131 rad, range 0.03 to 4 m, 10 Hz, all PLACEHOLDERS) from a
+  macro in `rover.gazebo.xacro`, bridged as `sensor_msgs/msg/LaserScan` on `/us/front_left|mid|right` and
+  `/us/rear_left|mid|right`.
+- Verified: `/us/front_mid` center ray reads 3.84 m to `tree_1` and ~1.39 to 1.40 m (all five rays) to
+  `stump_1`, matching hand calculations, while the LIDAR does not see the stump.
+- Sim vs real: a real ultrasonic reports ONE distance for its whole cone (the sim gives five), and real ones
+  struggle with angled or soft surfaces like foliage. TODO: convert to `sensor_msgs/msg/Range` (what the
+  ESP32 firmware will publish) using the nearest of the five rays, when we build the hardware bridge.
+- Design consequence: the ultrasonics only cover the front and rear faces at short range. Nav2 will need a
+  range-sensor obstacle layer fed by them (to be designed when we reach navigation).
+
+## SLAM (done, tag slam-mapping-v1)
+- `rover_bringup/config/slam_mapping.yaml` is a copy of the stock slam_toolbox
+  `mapper_params_online_async.yaml`. Only change so far: `max_laser_range` 20 -> 10 (S2 reaches ~10 m on
+  dark targets). Frames already matched: odom, map, base_footprint, `/scan`.
+- `rover_bringup/launch/slam.launch.py` wraps the stock online_async launch with our params and
+  `use_sim_time:=true` (hard-coded; make it a launch argument for the real rover).
+- Verified in sim: the three trees and the boulder map in the right places and stay fixed while driving.
+  RViz: Fixed Frame `map`, Map display on `/map` with Durability `Transient Local`.
+- Caveat: sim odometry is nearly perfect (no slip), so this is the easy case. Pi CPU load with SLAM is
+  unmeasured (the real S2 gives 3200 points per scan).
+- Open design decision: SLAM and the GPS EKF both want to own `map -> odom`. Plan: SLAM is a separate
+  mapping mode, not run together with GPS navigation.
+
+## Localization (done in the sim, tag ekf-localization-v1)
+- `rover_bringup/config/ekf.yaml`: single EKF (`ekf_filter_node`, frame `odom`) fusing `/odom` forward
+  speed + yaw rate and `/imu` yaw rate only. GPS not added yet. `use_sim_time` is passed from
+  `launch/ekf.launch.py`, not the YAML. Output: `/odometry/filtered` (~29 Hz).
+- Verified (rover stationary): `/tf` publishers are only `ekf_filter_node` and `robot_state_publisher`;
+  yaw wanders ~0.03 to 0.05 deg from integrating simulated IMU noise.
+- Verified (one short drive from a clean start): vs Gazebo's true pose, `/odom` was off ~12 cm / +3.5 deg
+  and `/odometry/filtered` ~1 cm / +0.6 deg. The sim odometry seems to overestimate turning (IMU yaw
+  rate reads ~8% below it), and the EKF follows the IMU. Single run, mild sim noise: not an accuracy claim.
+- Verified: the sim IMU orientation follows the rover (ENU, yaw 0 = facing east). After a left turn the IMU
+  read ~99 deg and `/odom` ~107 deg (~7% less turning on the IMU, matching the 8% yaw-rate gap). Likely the
+  odometry plugin overestimates; consistent with the ground-truth test. Orientation covariance is all zeros.
+- Sim vs real: the sim IMU acts as a perfect compass. The real IMU (MPU6050?) probably has no heading, so
+  GPS fusion needs another heading source on hardware.
+- `navsat_transform` added (in `ekf.yaml` and `ekf.launch.py`). Verified: `/odometry/gps` matched Gazebo's true
+  position to under 1 mm, including after a turn and a reverse, so the ENU alignment is correct (yaw_offset 0
+  works with the sim IMU).
+- Verified: when the rover is pressed against an obstacle (the stump), wheel odometry overcounts: true x 0.312,
+  `/odom` 0.985, `/odometry/filtered` 0.947. GPS stayed correct. An earlier unexplained 1 m error was almost
+  certainly the same thing (rover against the stump). Idea for the unstick behavior: a gap between wheel
+  odometry speed and GPS-derived speed means the wheels are slipping or blocked.
+- Done: dual EKF (Nav2 pattern, checked against its Jazzy example; these nodes are not lifecycle nodes on
+  Jazzy). `ekf_filter_node` (odom frame, remapped to `/odometry/local`) fuses `/odom` + `/imu` and owns
+  `odom -> base_footprint`. `ekf_filter_node_map` (map frame, `/odometry/global`) also fuses `/odometry/gps`
+  x/y and owns `map -> odom`. `navsat_transform` reads `odometry/global`. `/odometry/filtered` no longer exists.
+  Verified at rest: three nodes, three topics, `map -> base_footprint` ~zero.
+- GOTCHA: pasting a new YAML block with the editor can replace the file instead of appending. After editing,
+  check the keys: `python3 -c "import yaml; print(list(yaml.safe_load(open('src/rover_bringup/config/ekf.yaml')).keys()))"`
+  should print all three node names. A node name that isn't a YAML key silently runs with defaults.
+- Verified (rover held against the stump, wheels spinning): truth x 1.398, `/odom` 2.730 and `/odometry/local`
+  2.726 (+1.33 m wheel overcount), `/odometry/global` and `/odometry/gps` 1.3975. GPS fusion corrects the slip.
+- CAVEAT: global equals GPS to ~1e-10, so the map filter is copying GPS, not blending. Likely cause: the
+  bridge zeroes GPS covariance (and odom covariance is also zero), so GPS is treated as perfect. Fine for a
+  perfect sim GPS, but a real GPS (meters of error, worse under trees) will jitter. TODO: realistic sim GPS
+  noise and covariance, plus odometry covariance. Real GPS module and its accuracy are unknown.
+- One `Failed to meet update rate! Took 0.152 s` error from the odom filter (sim load on integrated graphics?
+  unverified). Watch whether it recurs; it matters for the Pi.
 
 
 ## Old files (uploaded earlier, NOT trusted, reuse selectively)
-- `ekf.yaml`: robot_localization EKF + navsat_transform, fuses /odom, /imu, GPS.
-  Reuse as a starting point when we reach localization.
+- `ekf.yaml`: dual-EKF design (`ekf_filter_node` in odom, `ekf_filter_node_map` in map fusing
+  `/odometry/gps` from navsat_transform). Reuse the map-frame idea when adding GPS.
 - `nav2_params.yaml` (and a duplicate `nav2_params_1.yaml`): Ackermann MPPI + Smac Hybrid,
   rolling-window costmaps, no static map. Known issues: footprint is 0.56 m wide but the
   real rover is about 0.66 m with wheels; `minimum_turning_radius` 0.8 depends on the
   real max steer angle; AMCL section is irrelevant without a map.
 - `robot.xacro` / `robot.gazebo`: old model, replaced by rover_description. The Gazebo file
   is a useful reference for the Ackermann, IMU, LIDAR, and navsat plugins.
-- NOT yet reviewed: `Rover_Documentation.docx`, `ackermann_bt.xml`,
-  `ackermann_through_poses_bt.xml`.
+- NOT yet reviewed: `Rover_Documentation.docx`, `ackermann_bt.xml`, `ackermann_through_poses_bt.xml`.
 - Wiring PDFs (unverified): master ESP drives a BTS7960 H-bridge for the drive motor, a
   steering servo, an RC receiver (7 channels), and the lift controller (relay, limit
   switches). Sensor ESP handles ultrasonics, gyro (I2C), battery voltage, and an override
   switch.
 
-
-## Ultrasonics (branch `ultrasonics`, in progress)
-- Six frames `us_front_left/mid/right` and `us_rear_left/mid/right` on `base_link` in
-`rover.urdf.xacro`. Mounted 3 in (0.0762 m) above the top of the wheels (z = wheel_radius + 0.0762
-from `base_link`), 0.15 m left/right of center, outer sensors angled 0.26 rad outward.
-All positions are PLACEHOLDERS except the 3 in height. Rear set faces backward (yaw pi).
-- They sit below the LIDAR plane (~0.57 m), so they should see low obstacles like `rock_1`.
-- Done: each ultrasonic is simulated as a 5-ray `gpu_lidar` (cone +/-0.131 rad, range 0.03 to 4 m,
-  10 Hz, all PLACEHOLDERS) defined by a macro in `rover.gazebo.xacro`, bridged as
-  `sensor_msgs/msg/LaserScan` on `/us/front_left|mid|right` and `/us/rear_left|mid|right`.
-  Verified: `/us/front_mid` center ray reads 3.84 m to `tree_1`, matching the hand calculation.
-- TODO: convert to `sensor_msgs/msg/Range` (what the ESP32 firmware will publish) when we build the
-  hardware bridge. The LaserScan form is fine for the sim.
-- Design consequence: anything under ~0.57 m is invisible to the LIDAR, and the ultrasonics only cover
-  the front and rear faces at short range. Nav2 will need a range-sensor obstacle layer fed by the
-  ultrasonics (to be designed when we reach navigation).
-
-
-## Questions
+## Open questions
 - Exact ultrasonic part (model number) is unknown, so their range/cone are still placeholders.
 - Which RPLIDAR S2 variant (30 m or 18 m) is on the rover; check the label.
-- Where the real GPS antenna sits (a forest rover probably needs it up on a mast).
+- Where the real GPS antenna sits (a forest rover probably needs it up on a mast, not in the LIDAR plane).
+- Real mass, ground clearance, max steer angle, lift speed, and sensor positions.
+- Do the real wheels sit outside the chassis? Track width (0.559) is almost equal to chassis width (0.562).
+- The real IMU (MPU6050 per old comments) probably has no compass heading, but navsat_transform needs a
+  heading reference. The sim IMU may hide this. Revisit before hardware.
 
-
-## SLAM (branch `slam-mapping`, in progress)
-- `rover_bringup/config/slam_mapping.yaml` is a copy of the stock slam_toolbox
-  `mapper_params_online_async.yaml`. Only change so far: `max_laser_range` 20 -> 10 (S2 reaches ~10 m on
-  dark targets). Frames already matched: odom, map, base_footprint, `/scan`.
-- Verified in sim: the three trees and the boulder map in the right places and stay fixed while driving
-  with `ros2 run teleop_twist_keyboard teleop_twist_keyboard` (avoid `j`/`l`, which turn in place; press
-  `k` to stop, since the sim keeps the last command). RViz: Fixed Frame `map`, Map display on `/map`
-  with Durability `Transient Local`.
-- Caveat: sim odometry is perfect (no slip, zero covariance), so this is the easy case. Pi CPU load
-  with SLAM is unmeasured.
-- Open design decision: SLAM and the GPS EKF both want to own `map -> odom`. Plan: SLAM is a separate
-  mapping mode, not run together with GPS navigation.
-- `rover_bringup/launch/slam.launch.py` wraps the stock online_async launch with our params and
-  `use_sim_time:=true` (hard-coded; make it a launch argument for the real rover).
-
-
-## Where we stopped / next steps (in order)
-1. Localization, branch `ekf-localization`: copy the old `ekf.yaml` into `rover_bringup/config/`.
-   Likely problems in the old file (NOT yet tested in the sim):
-   - TF conflict: the Gazebo bridge already publishes odom -> base_footprint on `/tf`, and an EKF with
-     `publish_tf: true` would publish the same transform. Only one can own it; probably remove the
-     `/tf` bridge line or turn off one of them.
-   - The real IMU (MPU6050 per old comments) has no compass heading, but navsat_transform needs a
-     heading reference. The sim IMU may supply one and hide this. Revisit before hardware.
-   - Sim odom and GPS covariances are all zeros; check how the EKF behaves.
-   - `use_sim_time: true` is hard-coded; the real rover needs false (make it a launch argument).
+## Next steps (in order)
+1. Localization: check the sim IMU's orientation, add GPS via `navsat_transform` and the map-frame EKF.
+   Handle the zeroed covariances. Make `use_sim_time` a launch argument (real rover needs false).
 2. Scan-gating node: republish `/scan` as `/scan_filtered` only while the lift is fully down.
    Sim signal: lift joint position. Real signal: limit switch via ESP32. Same topic for both.
 3. Nav2 params in `rover_bringup/config/`: update the footprint (~0.66 m wide with wheels), set
    `minimum_turning_radius` from the real steering limit, feed the ultrasonics to a range obstacle layer
    (the LIDAR is blind below ~0.57 m), and check the MPPI controller's CPU cost on the Pi.
-4. Boundary roaming + stuck recovery, then the ESP32 firmware and Pi hardware bridge.
-- SLAM and the GPS EKF both own `map -> odom`: run SLAM as a separate mapping mode.
-- Old files not yet reviewed: `Rover_Documentation.docx`, `ackermann_bt.xml`, `ackermann_through_poses_bt.xml`.
+4. Boundary roaming + stuck recovery, then the ESP32 firmware (with a command-timeout watchdog) and the
+   Pi hardware bridge.
 - New chat: paste this file first, plus the file being edited.
 
-
 ## Ideas for later (not committed to)
-- SLAM (slam_toolbox) as an optional branch after GPS navigation works. Not needed for the
-  stated goals; a 2D LIDAR on rough forest terrain may map poorly. Keep the lift down.
+- SLAM works in the sim. Open question: how it coexists with the GPS EKF (both want `map -> odom`), and
+  whether a 2D LIDAR maps well on rough forest terrain. Keep the lift down.
+- Portfolio: Gazebo can't run in a browser. Use screen-recorded video, a README with an architecture
+  diagram and test results, and the repo link. Decide later whether to make the repo public.
