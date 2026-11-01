@@ -63,12 +63,16 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - [x] Obstacle world and simulated ultrasonics
 - [x] SLAM in the sim (slam_toolbox online_async)
 - [x] EKF (wheel odometry + IMU yaw rate)
-- [ ] GPS via navsat_transform (and the map-frame EKF)
+- [x] GPS fusion wiring in the sim (dual EKF, corrects blocked-wheel error)
+- [ ] Realistic sim sensor noise and covariances (GPS, IMU, odometry) and a retest of the fusion
+- [ ] Heading source for GPS fusion on real hardware (real IMU likely has no compass)
 - [ ] Scan-gating node (lift down only)
 - [ ] Nav2 (reuse old params; footprint must be updated, wheels make it wider than 0.56)
 - [ ] Boundary roaming + stuck recovery
-- [ ] ESP32 firmware + Pi hardware bridge
+- [ ] Replace placeholder measurements and sensor specs with real ones
+- [ ] ESP32 firmware (with watchdog) + Pi hardware bridge
 - [ ] Field testing
+
 
 ## How to work with me (instructions for any assistant)
 - ONE step at a time. Never give a long multi-step list; I hit problems mid-way
@@ -213,7 +217,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Open design decision: SLAM and the GPS EKF both want to own `map -> odom`. Plan: SLAM is a separate
   mapping mode, not run together with GPS navigation.
 
-## Localization (branch `ekf-localization`, in progress)
+## Localization (done in the sim, tag ekf-localization-v1)
 - `rover_bringup/config/ekf.yaml`: single EKF (`ekf_filter_node`, frame `odom`) fusing `/odom` forward
   speed + yaw rate and `/imu` yaw rate only. GPS not added yet. `use_sim_time` is passed from
   `launch/ekf.launch.py`, not the YAML. Output: `/odometry/filtered` (~29 Hz).
@@ -242,7 +246,14 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - GOTCHA: pasting a new YAML block with the editor can replace the file instead of appending. After editing,
   check the keys: `python3 -c "import yaml; print(list(yaml.safe_load(open('src/rover_bringup/config/ekf.yaml')).keys()))"`
   should print all three node names. A node name that isn't a YAML key silently runs with defaults.
-- Next: drive into the stump and compare `/odometry/local` vs `/odometry/global` vs Gazebo's truth.
+- Verified (rover held against the stump, wheels spinning): truth x 1.398, `/odom` 2.730 and `/odometry/local`
+  2.726 (+1.33 m wheel overcount), `/odometry/global` and `/odometry/gps` 1.3975. GPS fusion corrects the slip.
+- CAVEAT: global equals GPS to ~1e-10, so the map filter is copying GPS, not blending. Likely cause: the
+  bridge zeroes GPS covariance (and odom covariance is also zero), so GPS is treated as perfect. Fine for a
+  perfect sim GPS, but a real GPS (meters of error, worse under trees) will jitter. TODO: realistic sim GPS
+  noise and covariance, plus odometry covariance. Real GPS module and its accuracy are unknown.
+- One `Failed to meet update rate! Took 0.152 s` error from the odom filter (sim load on integrated graphics?
+  unverified). Watch whether it recurs; it matters for the Pi.
 
 
 ## Old files (uploaded earlier, NOT trusted, reuse selectively)
