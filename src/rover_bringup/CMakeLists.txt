@@ -27,7 +27,7 @@ install(DIRECTORY config launch
   DESTINATION share/${PROJECT_NAME}
 )
 
-install(PROGRAMS scripts/gps_covariance.py
+install(PROGRAMS scripts/gps_covariance.py scripts/odom_covariance.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
