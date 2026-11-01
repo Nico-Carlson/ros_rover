@@ -227,7 +227,18 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   odometry plugin overestimates; consistent with the ground-truth test. Orientation covariance is all zeros.
 - Sim vs real: the sim IMU acts as a perfect compass. The real IMU (MPU6050?) probably has no heading, so
   GPS fusion needs another heading source on hardware.
-- Next: add `navsat_transform` (GPS to `/odometry/gps`).
+- `navsat_transform` added (in `ekf.yaml` and `ekf.launch.py`). Verified: `/odometry/gps` matched Gazebo's true
+  position to under 1 mm, including after a turn and a reverse, so the ENU alignment is correct (yaw_offset 0
+  works with the sim IMU).
+- Verified: when the rover is pressed against an obstacle (the stump), wheel odometry overcounts: true x 0.312,
+  `/odom` 0.985, `/odometry/filtered` 0.947. GPS stayed correct. An earlier unexplained 1 m error was almost
+  certainly the same thing (rover against the stump). Idea for the unstick behavior: a gap between wheel
+  odometry speed and GPS-derived speed means the wheels are slipping or blocked.
+- Plan (Nav2's dual-EKF pattern, checked against its Jazzy example): `ekf_filter_node` (odom frame) outputs
+  `odometry/local`; a second `ekf_filter_node_map` (map frame, fuses `/odom`, `/imu`, and `/odometry/gps` x/y)
+  outputs `odometry/global` and owns `map -> odom`; `navsat_transform` reads `odometry/global`. Not lifecycle
+  nodes on Jazzy. Once done, `/odometry/filtered` no longer exists.
+- Likely rough edge: the bridge zeroes GPS covariance, so the map EKF may trust GPS too much. Check first.
 
 
 ## Old files (uploaded earlier, NOT trusted, reuse selectively)
