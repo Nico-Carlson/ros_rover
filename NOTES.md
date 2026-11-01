@@ -65,7 +65,8 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - [x] EKF (wheel odometry + IMU yaw rate)
 - [x] GPS fusion wiring in the sim (dual EKF, corrects blocked-wheel error)
 - [x] Realistic sim GPS noise and covariance, datum, and IMU yaw in the map EKF (GPS fusion retested)
-- [ ] Realistic sim noise and covariances for the IMU and wheel odometry, then retest the fusion
+- [x] Hardware-matched EKFs: wheel odometry dropped, rf2o LIDAR odometry fused (retested against the stump)
+- [ ] Realistic sim noise for the IMU, and tune the covariances (GPS, rf2o speed, IMU) against real data
 - [ ] Heading source for GPS fusion on real hardware (real IMU likely has no compass)
 - [ ] Scan-gating node (lift down only)
 - [ ] Nav2 (reuse old params; footprint must be updated, wheels make it wider than 0.56)
@@ -304,9 +305,39 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - The real rover has NO wheel encoders, so no real `/odom` forward speed. The sim's wheel odometry is a
   sim-only source. Everything that fuses or compares `/odom` (both EKFs, the wheel-vs-GPS stuck idea) needs a
   hardware plan.
-- Candidate speed sources (unevaluated): GPS velocity, LIDAR scan-matching odometry, commanded speed
-  (open-loop), or adding hall sensors/encoders.
-- Before more sim noise work, decide what the EKF fuses on hardware, so the sim matches it.
+- DECIDED: GPS + IMU + LIDAR odometry (rf2o) replace wheel odometry in both EKFs; see the "Hardware-matched
+  EKF" section. GPS velocity, commanded speed, and adding hall sensors were not pursued. Hall sensors or
+  encoders remain an option if rf2o proves weak in a real forest.
+- Still open for hardware: a real heading source (the sim IMU is a compass, the real one probably is not), and
+  whether rf2o holds up on rough, cluttered terrain.
+
+## Hardware-matched EKF and LIDAR odometry (done in the sim, branch hardware-matched-ekf)
+- Neither EKF fuses the sim's `/odom` any more (the real rover has no encoders). Odom filter: IMU absolute yaw
+  + yaw rate (sim only, see GPS section) and `/odom_rf2o_cov` forward speed + yaw rate. Map filter: GPS x/y as
+  `odom0`, IMU yaw + yaw rate, and `/odom_rf2o_cov` speed + yaw rate as `odom1`.
+- GOTCHA: a sensor numbered `odom1` with no `odom0` is ignored (the map filter read exactly 0.0 until the GPS
+  entry was renamed `odom0`). Number sensors from 0.
+- rf2o (LIDAR odometry, GPL v3): cloned into `src/rf2o_laser_odometry`, which is git-ignored, NOT in this
+  repo. Fetch: `cd ~/rover_ws/src && git clone -b ros2 https://github.com/MAPIRlab/rf2o_laser_odometry.git`,
+  then `colcon build --packages-select rf2o_laser_odometry` (~20 s on Jazzy). The port's own launch file
+  defaults to `publish_tf: True` and `base_link`, which would fight the EKF; use ours,
+  `rover_bringup/launch/lidar_odom.launch.py` (`publish_tf` False, `base_frame_id` base_footprint, 10 Hz to
+  match the scan, `use_sim_time` hard-coded; make it a launch argument for hardware). Publishes `/odom_rf2o`.
+- rf2o publishes all-zero covariances. `rover_bringup/scripts/odom_covariance.py` (installed in
+  CMakeLists.txt with `gps_covariance.py`) fills the twist covariance (`speed_variance`, `yaw_rate_variance`,
+  both 0.01, PLACEHOLDER guesses, not measured) and republishes `/odom_rf2o_cov`.
+- Start order (fresh start, three terminals): `sim.launch.py`, then `lidar_odom.launch.py`, then
+  `ekf.launch.py`.
+- Verified (single runs, sim): driving in reverse 1.56 m, rf2o -1.579 vs sim wheels -1.558. Rover held
+  against the stump: wheels read 3.567 (overcount), rf2o 1.364 (earlier true x there was 1.398; assumes the
+  same stopping spot). With the full stack, `/odometry/local` read 1.379 and `/odometry/global` over 5
+  samples averaged ~1.31 m with ~0.12 m std dev (computed by hand), vs ~1.1 m std dev for raw GPS at rest.
+- Caveats: rf2o occasionally skips a scan (0.2 s gaps, likely sim load; unconfirmed). It needs the lift down
+  and structure in range; the sim world is flat with a few trees, so forest performance is unknown. Pi CPU
+  cost with the real S2 (3200 points per scan) is unmeasured. The "Latitude 45d more than 20d from N pole"
+  ERROR from navsat_transform seems harmless (positions stay sane; unconfirmed).
+- Stuck-detection idea changes: wheel speed does not exist on hardware, so compare commanded speed with
+  rf2o speed instead.
 
 ## Open questions
 - Exact ultrasonic part (model number) is unknown, so their range/cone are still placeholders.
@@ -318,9 +349,10 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   heading reference. The sim IMU may hide this. Revisit before hardware.
 
 ## Next steps (in order)
-1. Sim sensor noise: add realistic noise and covariances for the IMU and wheel odometry, then retest the
-   fusion (GPS is done). Make `use_sim_time` a launch argument (real rover needs false). On hardware:
-   a heading source for GPS fusion, and drop `gps_covariance.py` and the `gps/fix_cov` remap.
+1. Make `use_sim_time` a launch argument in `ekf.launch.py` and `lidar_odom.launch.py` (the real rover needs
+   false). Add realistic IMU noise in the sim. On hardware: a real heading source for the map filter, drop
+   `gps_covariance.py` and the `gps/fix_cov` remap (a real GPS driver reports its own covariance), and
+   measure rf2o's real error to replace the placeholder variances in `odom_covariance.py`.
 2. Scan-gating node: republish `/scan` as `/scan_filtered` only while the lift is fully down.
    Sim signal: lift joint position. Real signal: limit switch via ESP32. Same topic for both.
 3. Nav2 params in `rover_bringup/config/`: update the footprint (~0.66 m wide with wheels), set

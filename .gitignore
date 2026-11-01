@@ -9,3 +9,5 @@ __pycache__/
 
 # Editor files
 *.swp
+
+src/rf2o_laser_odometry/
