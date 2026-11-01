@@ -106,6 +106,22 @@
       <update_rate>10</update_rate>
       <always_on>true</always_on>
       <visualize>false</visualize>
+      <navsat>
+        <position_sensing>
+          <horizontal>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.0000135</stddev>              
+            </noise>
+          </horizontal>
+          <vertical>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>3.0</stddev>
+            </noise>
+          </vertical>
+        </position_sensing>
+      </navsat>
     </sensor>
   </gazebo>
     

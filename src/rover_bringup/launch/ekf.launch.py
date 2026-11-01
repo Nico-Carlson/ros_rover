@@ -33,7 +33,18 @@ def generate_launch_description():
         name="navsat_transform",
         output="screen",
         parameters=[ekf_params, {"use_sim_time": True}],
-        remappings=[("odometry/filtered", "odometry/global")],
+        remappings=[
+            ("odometry/filtered", "odometry/global"),
+            ("gps/fix", "gps/fix_cov"),
+        ],
     )
 
-    return LaunchDescription([ekf_odom, ekf_map, navsat])
+    gps_cov = Node(
+        package="rover_bringup",
+        executable="gps_covariance.py",
+        name="gps_covariance",
+        output="screen",
+        parameters=[{"use_sim_time": True}],
+    )
+
+    return LaunchDescription([ekf_odom, ekf_map, navsat, gps_cov])
