@@ -64,7 +64,8 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - [x] SLAM in the sim (slam_toolbox online_async)
 - [x] EKF (wheel odometry + IMU yaw rate)
 - [x] GPS fusion wiring in the sim (dual EKF, corrects blocked-wheel error)
-- [ ] Realistic sim sensor noise and covariances (GPS, IMU, odometry) and a retest of the fusion
+- [x] Realistic sim GPS noise and covariance, datum, and IMU yaw in the map EKF (GPS fusion retested)
+- [ ] Realistic sim noise and covariances for the IMU and wheel odometry, then retest the fusion
 - [ ] Heading source for GPS fusion on real hardware (real IMU likely has no compass)
 - [ ] Scan-gating node (lift down only)
 - [ ] Nav2 (reuse old params; footprint must be updated, wheels make it wider than 0.56)
@@ -256,6 +257,28 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   unverified). Watch whether it recurs; it matters for the Pi.
 
 
+## GPS noise and covariance (done in the sim, branch gps-covariance)
+- Sim GPS noise (PLACEHOLDERS): navsat `position_sensing` horizontal gaussian stddev 0.0000135, vertical
+  3.0. It seems to be applied in degrees (~1.5 m north-south, ~1.06 m east-west at 45 deg latitude); that is
+  inferred from sample scatter, not confirmed in the docs.
+- The bridge zeroes `position_covariance`. New node `rover_bringup/scripts/gps_covariance.py` (installed
+  with `install(PROGRAMS ...)` in CMakeLists.txt, needs `chmod +x`) subscribes `/gps/fix`, fills a diagonal
+  covariance (parameters `horizontal_variance` 2.25, `vertical_variance` 9.0, in m^2) and publishes
+  `/gps/fix_cov`. `ekf.launch.py` remaps navsat_transform's `gps/fix` to `gps/fix_cov`. SIM ONLY: a real GPS
+  driver publishes its own covariance, so drop the node and the remap on hardware.
+- Verified (stationary, 15 samples, std devs computed by hand): `/odometry/gps` x ~1.1 m, `/odometry/global`
+  x ~0.28 m. Before this, global copied GPS to ~1e-10.
+- Datum: without one, navsat_transform used the first (noisy) fix as its origin, leaving a fixed ~2.3 m
+  offset. Now `wait_for_datum: true` and `datum: [45.0, -110.0, 0.0]` in `ekf.yaml` (matches the world's
+  `<spherical_coordinates>`; change both together when the real test site is chosen). A one-time startup
+  ERROR "Could not obtain map -> base_footprint transform" is harmless (it did not repeat).
+- Yaw: the map EKF had no absolute heading, so with noisy GPS its yaw wandered (-90 to -51 deg) while the
+  rover sat still (cause is a guess; the fix below resolved it). Fix: the map EKF's `imu0_config` also fuses
+  absolute yaw (6th value, first row). Yaw now reads 0.000. SIM ONLY: the real IMU probably has no compass,
+  so hardware needs another heading source.
+- Verified (stationary): `map -> base_footprint` yaw 0.000 on every sample, translation within ~1 m of origin.
+
+
 ## Old files (uploaded earlier, NOT trusted, reuse selectively)
 - `ekf.yaml`: dual-EKF design (`ekf_filter_node` in odom, `ekf_filter_node_map` in map fusing
   `/odometry/gps` from navsat_transform). Reuse the map-frame idea when adding GPS.
@@ -265,8 +288,14 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   real max steer angle; AMCL section is irrelevant without a map.
 - `robot.xacro` / `robot.gazebo`: old model, replaced by rover_description. The Gazebo file
   is a useful reference for the Ackermann, IMU, LIDAR, and navsat plugins.
-- NOT yet reviewed: `Rover_Documentation.docx`, `ackermann_bt.xml`, `ackermann_through_poses_bt.xml`.
-- Wiring PDFs (unverified): master ESP drives a BTS7960 H-bridge for the drive motor, a
+- `Rover_Documentation.docx` (reviewed): RC channels (1 steering, 2 throttle & brake, 6 lift, 7 reverse
+  thumb switch), partly blank ESP32 pin tables (limit switches, brake, reverse, throttle in/out, gyro on
+  I2C pins 21/22), and a feature list: tilt and collision alarms (caution/danger), Bluetooth telemetry, lift
+  interlock (alarms off, brake set, no throttle), auto-brake when throttle is off, brake releases before
+  forward, override switch, stop on loss of radio contact. No part numbers and NO wheel encoders mentioned.
+  The firmware must map `/cmd_vel` to throttle/steering/brake/reverse. Not yet reviewed:
+  `ackermann_bt.xml`, `ackermann_through_poses_bt.xml`.
+  - Wiring PDFs (unverified): master ESP drives a BTS7960 H-bridge for the drive motor, a
   steering servo, an RC receiver (7 channels), and the lift controller (relay, limit
   switches). Sensor ESP handles ultrasonics, gyro (I2C), battery voltage, and an override
   switch.
@@ -281,8 +310,9 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   heading reference. The sim IMU may hide this. Revisit before hardware.
 
 ## Next steps (in order)
-1. Localization: check the sim IMU's orientation, add GPS via `navsat_transform` and the map-frame EKF.
-   Handle the zeroed covariances. Make `use_sim_time` a launch argument (real rover needs false).
+1. Sim sensor noise: add realistic noise and covariances for the IMU and wheel odometry, then retest the
+   fusion (GPS is done). Make `use_sim_time` a launch argument (real rover needs false). On hardware:
+   a heading source for GPS fusion, and drop `gps_covariance.py` and the `gps/fix_cov` remap.
 2. Scan-gating node: republish `/scan` as `/scan_filtered` only while the lift is fully down.
    Sim signal: lift joint position. Real signal: limit switch via ESP32. Same topic for both.
 3. Nav2 params in `rover_bringup/config/`: update the footprint (~0.66 m wide with wheels), set
