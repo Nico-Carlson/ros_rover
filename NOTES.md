@@ -21,10 +21,13 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 
 ## Quick start (sim)
 1. `ros2 launch rover_description sim.launch.py` (wait ~10 s)
-2. `ros2 launch rover_bringup ekf.launch.py` (or `slam.launch.py` for mapping)
-3. RViz: `ros2 run rviz2 rviz2 -d ~/rover_ws/src/rover_description/rviz/rover.rviz --ros-args -p use_sim_time:=true`
-4. Drive: `ros2 run teleop_twist_keyboard teleop_twist_keyboard` (avoid `j`/`l`; press `k` to stop)
+2. `ros2 launch rover_bringup lidar_odom.launch.py` (rf2o LIDAR odometry; start it BEFORE the EKF)
+3. `ros2 launch rover_bringup ekf.launch.py` (or `slam.launch.py` for mapping)
+4. RViz: `ros2 run rviz2 rviz2 -d ~/rover_ws/src/rover_description/rviz/rover.rviz --ros-args -p use_sim_time:=true`
+5. Drive: `ros2 run teleop_twist_keyboard teleop_twist_keyboard` (avoid `j`/`l`; press `k` to stop)
 - Stop everything with Ctrl+C in each launch terminal. Closing the Gazebo window does NOT stop the sim.
+- Start fresh (stop everything first) before any test where positions are compared: the EKFs start at (0, 0).
+- Scan gating is wired into `lidar_odom.launch.py`: rf2o reads `/scan_filtered`, and `sim_lift_signal.py` stands in for the lift switch in the sim.
 
 ## Git conventions
 - `main` always works; one descriptive branch per piece of work (no phase numbers)
@@ -68,7 +71,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - [x] Hardware-matched EKFs: wheel odometry dropped, rf2o LIDAR odometry fused (retested against the stump)
 - [ ] Realistic sim noise for the IMU, and tune the covariances (GPS, rf2o speed, IMU) against real data
 - [ ] Heading source for GPS fusion on real hardware (real IMU likely has no compass)
-- [ ] Scan-gating node (lift down only)
+- [x] Scan-gating node (lift down only)
 - [ ] Nav2 (reuse old params; footprint must be updated, wheels make it wider than 0.56)
 - [ ] Boundary roaming + stuck recovery
 - [ ] Replace placeholder measurements and sensor specs with real ones
@@ -339,6 +342,38 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Stuck-detection idea changes: wheel speed does not exist on hardware, so compare commanded speed with
   rf2o speed instead.
 
+## Scan gating (done in the sim, branch scan-gating)
+- Goal: LIDAR consumers (rf2o now; SLAM and Nav2 later) must only see scans taken with the lift fully down.
+- Design: one signal, `/lift_down` (`std_msgs/Bool`, true = fully down). Sim: derived from `lift_joint` in
+  `/joint_states`. Hardware: the ESP32 publishes it from the limit switch. The gate does not care which.
+- The sim lift CANNOT be moved: `lift_joint` is a plain prismatic joint with limits, with no controller or
+  command topic. It always reads ~0 (down). So the gate is tested by hand-publishing `/lift_down`. Making the
+  sim lift controllable is a possible later task (Gazebo joint controller + bridged command topic).
+- `rover_bringup/scripts/scan_gate.py` (written, installed, tested): subscribes `/scan` (best-effort
+  `qos_profile_sensor_data`, so a real LIDAR driver connects too) and `/lift_down`, republishes
+  `/scan_filtered` (reliable). FAIL-SAFE: blocks scans if no `/lift_down` ever arrived, if it is false, or if
+  the last one is older than `lift_timeout` (1.0 s, PLACEHOLDER).
+- `rover_bringup/scripts/sim_lift_signal.py`: SIM ONLY. Publishes `/lift_down` = (`lift_joint` position <
+  `down_threshold` 0.01 m, PLACEHOLDER) on every joint-state message. Verified: it publishes true in the sim
+  (the lift never moves there), so `/scan_filtered` flows.
+- Both scripts are listed in the `install(PROGRAMS ...)` block in `CMakeLists.txt` (every new script must be
+  added there and `chmod +x`'d).
+- Verified by hand (sim running, `ros2 topic pub -r 5 /lift_down std_msgs/msg/Bool "{data: ...}"`):
+  no signal -> `/scan_filtered` silent; `true` -> ~9.9 Hz; `false` -> silent; publisher stopped -> scans
+  stopped within about a second.
+- Wired in: `launch/lidar_odom.launch.py` now starts `scan_gate`, `sim_lift_signal`, rf2o and
+  `odom_covariance`; rf2o's `laser_scan_topic` is `/scan_filtered`. Start order is unchanged (sim, then
+  `lidar_odom.launch.py`, then `ekf.launch.py`).
+- Verified (fresh start, full stack): `/scan_filtered` ~8.9 Hz vs raw `/scan` ~8.6 Hz, so the gate loses no scans;
+  both are below 10 Hz probably because the sim runs under real time (inferred, real-time factor not checked).
+  A short reverse drive gave `/odom_rf2o` (-0.982, 0.467) vs sim wheels (-0.949, 0.508), about 5 cm apart.
+  Agreement only, not a ground-truth check.
+- Harmless oddities: `ros2 node list` shows `/rf2o_laser_odometry` twice although `pgrep` finds one process
+  (probably an internal helper node in the port; a guess). One `Failed to meet update rate! Took 0.165 s`
+  from the map EKF at startup, not repeated during the drive (second sighting of this error, see Localization).
+- Still to do: SLAM should read `/scan_filtered` (change `scan_topic` in `slam_mapping.yaml`) when next used.
+  On hardware, leave `sim_lift_signal.py` out of the launch; the ESP32 publishes `/lift_down`.
+
 ## Open questions
 - Exact ultrasonic part (model number) is unknown, so their range/cone are still placeholders.
 - Which RPLIDAR S2 variant (30 m or 18 m) is on the rover; check the label.
@@ -353,7 +388,6 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
    false). Add realistic IMU noise in the sim. On hardware: a real heading source for the map filter, drop
    `gps_covariance.py` and the `gps/fix_cov` remap (a real GPS driver reports its own covariance), and
    measure rf2o's real error to replace the placeholder variances in `odom_covariance.py`.
-2. Scan-gating node: republish `/scan` as `/scan_filtered` only while the lift is fully down.
    Sim signal: lift joint position. Real signal: limit switch via ESP32. Same topic for both.
 3. Nav2 params in `rover_bringup/config/`: update the footprint (~0.66 m wide with wheels), set
    `minimum_turning_radius` from the real steering limit, feed the ultrasonics to a range obstacle layer
