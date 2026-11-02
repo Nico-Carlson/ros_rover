@@ -22,9 +22,11 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 ## Quick start (sim)
 1. `ros2 launch rover_description sim.launch.py` (wait ~10 s)
 2. `ros2 launch rover_bringup lidar_odom.launch.py` (rf2o LIDAR odometry; start it BEFORE the EKF)
-3. `ros2 launch rover_bringup ekf.launch.py` (or `slam.launch.py` for mapping)
-4. RViz: `ros2 run rviz2 rviz2 -d ~/rover_ws/src/rover_description/rviz/rover.rviz --ros-args -p use_sim_time:=true`
-5. Drive: `ros2 run teleop_twist_keyboard teleop_twist_keyboard` (avoid `j`/`l`; press `k` to stop)
+3. `ros2 launch rover_bringup ekf.launch.py` (SLAM is a separate mapping mode, not run with this: see "SLAM")
+4. `ros2 launch rover_bringup nav2.launch.py` (start it LAST: the costmaps need `odom -> base_footprint` to exist first, or the first attempt times out and you relaunch; takes ~30 s to come up)
+5. RViz: `ros2 run rviz2 rviz2 -d ~/rover_ws/src/rover_description/rviz/rover.rviz --ros-args -p use_sim_time:=true` (Fixed Frame `odom`; add Map on `/local_costmap/costmap`, Path on `/plan`; send goals with "2D Goal Pose")
+6. Drive by hand: `ros2 run teleop_twist_keyboard teleop_twist_keyboard` (not while Nav2 has a goal)
+
 - Stop everything with Ctrl+C in each launch terminal. Closing the Gazebo window does NOT stop the sim.
 - Start fresh (stop everything first) before any test where positions are compared: the EKFs start at (0, 0).
 - Scan gating is wired into `lidar_odom.launch.py`: rf2o reads `/scan_filtered`, and `sim_lift_signal.py` stands in for the lift switch in the sim.
@@ -374,6 +376,24 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   from the map EKF at startup, not repeated during the drive (second sighting of this error, see Localization).
 - Still to do: SLAM should read `/scan_filtered` (change `scan_topic` in `slam_mapping.yaml`) when next used.
   On hardware, leave `sim_lift_signal.py` out of the launch; the ESP32 publishes `/lift_down`.
+
+## Nav2 (in progress, branch nav2-params, NOT merged, NOT tagged)
+- `config/nav2_params.yaml`: copied from the old project, then: footprint [0.902, +-0.33] to [-0.216, +-0.33]
+  (chassis centered 0.343 m ahead of base_footprint; 0.33 half-width includes wheels, track width unverified),
+  scan topics -> `/scan_filtered`, odom topics -> `/odometry/local`, `consider_footprint: true` in CostCritic,
+  dropped amcl, route_server, docking_server and loopback_simulator blocks.
+- `launch/nav2.launch.py`: OWN launch, not the stock `navigation_launch.py`, because the stock one hard-codes
+  `route_server` and `docking_server` (docking fails without a dock plugin and aborts the whole bringup). Starts
+  eight nodes plus a lifecycle manager; `use_sim_time` is an argument (default true). Start order: sim,
+  `lidar_odom`, `ekf`, then `nav2` LAST (the costmaps need `odom -> base_footprint` to exist first, or the
+  first attempt times out and you relaunch).
+- Verified in the sim: all nodes active; a goal in RViz plans and the rover drives to it.
+- Observed and TODO: wavy turns near the goal and a small "v" at the end; `yaw_goal_tolerance` (0.75) is
+  probably too strict, try ~1.5. Smac planner takes ~29 s to configure (check on the Pi).
+  MPPI speed limits are untested guesses.
+- Not done: ultrasonic range layer (LIDAR blind below ~0.57 m), real steer angle for
+  `minimum_turning_radius`, scan-silent handling (a gated-off scan looks like "no obstacles"),
+  Pi CPU check, boundary roaming and stuck recovery.
 
 ## Open questions
 - Exact ultrasonic part (model number) is unknown, so their range/cone are still placeholders.
