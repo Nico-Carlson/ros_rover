@@ -20,12 +20,9 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Do NOT set QT_SCALE_FACTOR (causes black flashing in RViz)
 
 ## Quick start (sim)
-1. `ros2 launch rover_description sim.launch.py` (wait ~10 s)
-2. `ros2 launch rover_bringup lidar_odom.launch.py` (rf2o LIDAR odometry; start it BEFORE the EKF)
-3. `ros2 launch rover_bringup ekf.launch.py` (SLAM is a separate mapping mode, not run with this: see "SLAM")
-4. `ros2 launch rover_bringup nav2.launch.py` (start it LAST: the costmaps need `odom -> base_footprint` to exist first, or the first attempt times out and you relaunch; takes ~30 s to come up)
-5. RViz: `ros2 run rviz2 rviz2 -d ~/rover_ws/src/rover_description/rviz/rover.rviz --ros-args -p use_sim_time:=true` (Fixed Frame `odom`; add Map on `/local_costmap/costmap`, Path on `/plan`; send goals with "2D Goal Pose")
-6. Drive by hand: `ros2 run teleop_twist_keyboard teleop_twist_keyboard` (not while Nav2 has a goal)
+1. `ros2 launch rover_bringup sim_nav.launch.py` starts the sim, rf2o + scan gate, both EKFs, Nav2 and RViz in order, on timers (10, 15, 22 and 25 s after launch). The delays are guesses: if Nav2 times out waiting for `odom`, raise its delay in the file.
+2. In RViz, send goals with "2D Goal Pose". Drive by hand only when Nav2 has no goal: `ros2 run teleop_twist_keyboard teleop_twist_keyboard` (avoid `j`/`l`; press `k` to stop).
+- Manual start order, if you need the terminals separately: `sim.launch.py`, `lidar_odom.launch.py`, `ekf.launch.py`, `nav2.launch.py` LAST.
 
 - Stop everything with Ctrl+C in each launch terminal. Closing the Gazebo window does NOT stop the sim.
 - Start fresh (stop everything first) before any test where positions are compared: the EKFs start at (0, 0).
@@ -394,6 +391,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Not done: ultrasonic range layer (LIDAR blind below ~0.57 m), real steer angle for
   `minimum_turning_radius`, scan-silent handling (a gated-off scan looks like "no obstacles"),
   Pi CPU check, boundary roaming and stuck recovery.
+- `yaw_goal_tolerance` loosened 0.75 -> 1.5 rad; verified in the sim that the wavy ending and "v" are better. `launch/sim_nav.launch.py` starts everything (including RViz with the saved `rover.rviz`) in one command. Remove the "wavy turns" TODO from the list above.
 
 ## Open questions
 - Exact ultrasonic part (model number) is unknown, so their range/cone are still placeholders.
@@ -415,6 +413,14 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 4. Boundary roaming + stuck recovery, then the ESP32 firmware (with a command-timeout watchdog) and the
    Pi hardware bridge.
 - New chat: paste this file first, plus the file being edited.
+
+
+## Live tuning sliders (idea, not started)
+- Goal: a small tool with sliders to change values while the sim or rover runs (goal tolerances, speed limits, danger zones) with no rebuild or relaunch.
+- Likely approach: `rqt_reconfigure` for ROS 2 parameters (sliders for numbers). Open question: which of our Nav2 parameters can change at runtime. Many controller and costmap settings can; footprint and plugin lists need a restart (unverified, check per parameter with `ros2 param set`).
+- Danger zones and stop distances need a node that reads them as parameters (the ultrasonic range layer and stuck recovery do not exist yet), so this depends on those.
+- Values tuned live must be copied back into `nav2_params.yaml` afterwards, or they are lost on relaunch.
+- A custom GUI (Python, Qt or a web page) is possible if `rqt_reconfigure` is too limited; decide after trying it.
 
 ## Ideas for later (not committed to)
 - SLAM works in the sim. Open question: how it coexists with the GPS EKF (both want `map -> odom`), and
