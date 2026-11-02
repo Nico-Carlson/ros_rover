@@ -33,7 +33,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - `main` always works; one descriptive branch per piece of work (no phase numbers)
 - Commit after each working step; merge to main (`--no-ff`) when a branch's goal is done
 - Tag each finished milestone before deleting any branch. Tags so far: `robot-model-v1`,
-  `gazebo-sim-v1`, `obstacle-world-v1`, `ultrasonics-v1`, `slam-mapping-v1`, `ekf-localization-v1`, `gps-covariance-v1`,  `hardware-matched-ekf-v1`, `scan-gating-v1` 
+  `gazebo-sim-v1`, `obstacle-world-v1`, `ultrasonics-v1`, `slam-mapping-v1`, `ekf-localization-v1`, `gps-covariance-v1`,  `hardware-matched-ekf-v1`, `scan-gating-v1`, `nav2-sim-v1`
 - Finished branches still exist (all merged). Deleting them is optional; the tags preserve the work.
 
 ## Frame conventions
@@ -72,7 +72,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - [ ] Realistic sim noise for the IMU, and tune the covariances (GPS, rf2o speed, IMU) against real data
 - [ ] Heading source for GPS fusion on real hardware (real IMU likely has no compass)
 - [x] Scan-gating node (lift down only)
-- [ ] Nav2 (reuse old params; footprint must be updated, wheels make it wider than 0.56)
+- [x] Nav2 in the sim (own launch, footprint, filtered scan; ultrasonic layer and real-hardware tuning still open)
 - [ ] Boundary roaming + stuck recovery
 - [ ] Replace placeholder measurements and sensor specs with real ones
 - [ ] ESP32 firmware (with watchdog) + Pi hardware bridge
@@ -374,7 +374,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Still to do: SLAM should read `/scan_filtered` (change `scan_topic` in `slam_mapping.yaml`) when next used.
   On hardware, leave `sim_lift_signal.py` out of the launch; the ESP32 publishes `/lift_down`.
 
-## Nav2 (in progress, branch nav2-params, NOT merged, NOT tagged)
+## Nav2 (done in the sim, tag nav2-sim-v1)
 - `config/nav2_params.yaml`: copied from the old project, then: footprint [0.902, +-0.33] to [-0.216, +-0.33]
   (chassis centered 0.343 m ahead of base_footprint; 0.33 half-width includes wheels, track width unverified),
   scan topics -> `/scan_filtered`, odom topics -> `/odometry/local`, `consider_footprint: true` in CostCritic,
@@ -406,11 +406,10 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 1. Add realistic IMU noise in the sim. On hardware: a real heading source for the map filter, drop
    `gps_covariance.py` and the `gps/fix_cov` remap (a real GPS driver reports its own covariance), and
    measure rf2o's real error to replace the placeholder variances in `odom_covariance.py`.
-   Sim signal: lift joint position. Real signal: limit switch via ESP32. Same topic for both.
-3. Nav2 params in `rover_bringup/config/`: update the footprint (~0.66 m wide with wheels), set
-   `minimum_turning_radius` from the real steering limit, feed the ultrasonics to a range obstacle layer
-   (the LIDAR is blind below ~0.57 m), and check the MPPI controller's CPU cost on the Pi.
-4. Boundary roaming + stuck recovery, then the ESP32 firmware (with a command-timeout watchdog) and the
+2. Nav2 leftovers: ultrasonic range obstacle layer (LIDAR is blind below ~0.57 m), real max steer angle for
+   `minimum_turning_radius`, behavior when `/scan_filtered` goes silent, and Pi CPU check (MPPI, Smac's ~29 s
+   configure).
+3. Boundary roaming + stuck recovery, then the ESP32 firmware (with a command-timeout watchdog) and the
    Pi hardware bridge.
 - New chat: paste this file first, plus the file being edited.
 
