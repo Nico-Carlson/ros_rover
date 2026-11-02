@@ -10,7 +10,7 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {
-                "laser_scan_topic": "/scan",
+                "laser_scan_topic": "/scan_filtered",
                 "odom_topic": "/odom_rf2o",
                 "publish_tf": False,
                 "base_frame_id": "base_footprint",
@@ -30,4 +30,20 @@ def generate_launch_description():
         parameters=[{"use_sim_time": True}],
     )
 
-    return LaunchDescription([rf2o, odom_cov])
+    scan_gate = Node(
+        package="rover_bringup",
+        executable="scan_gate.py",
+        name="scan_gate",
+        output="screen",
+        parameters=[{"use_sim_time": True}],
+    )
+
+    sim_lift = Node(
+        package="rover_bringup",
+        executable="sim_lift_signal.py",
+        name="sim_lift_signal",
+        output="screen",
+        parameters=[{"use_sim_time": True}],
+    )
+
+    return LaunchDescription([scan_gate, sim_lift, rf2o, odom_cov])
