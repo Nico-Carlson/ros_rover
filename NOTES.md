@@ -28,6 +28,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Stop everything with Ctrl+C in each launch terminal. Closing the Gazebo window does NOT stop the sim.
 - Start fresh (stop everything first) before any test where positions are compared: the EKFs start at (0, 0).
 - Scan gating is wired into `lidar_odom.launch.py`: rf2o reads `/scan_filtered`, and `sim_lift_signal.py` stands in for the lift switch in the sim.
+- both launches take use_sim_time:=false for hardware (default true)
 
 ## Git conventions
 - `main` always works; one descriptive branch per piece of work (no phase numbers)
@@ -384,8 +385,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   heading reference. The sim IMU may hide this. Revisit before hardware.
 
 ## Next steps (in order)
-1. Make `use_sim_time` a launch argument in `ekf.launch.py` and `lidar_odom.launch.py` (the real rover needs
-   false). Add realistic IMU noise in the sim. On hardware: a real heading source for the map filter, drop
+1. Add realistic IMU noise in the sim. On hardware: a real heading source for the map filter, drop
    `gps_covariance.py` and the `gps/fix_cov` remap (a real GPS driver reports its own covariance), and
    measure rf2o's real error to replace the placeholder variances in `odom_covariance.py`.
    Sim signal: lift joint position. Real signal: limit switch via ESP32. Same topic for both.
