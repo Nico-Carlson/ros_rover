@@ -455,6 +455,23 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   `rover_description`, `nav2_bringup`, `robot_localization`, `slam_toolbox` and the nav2 packages the launches
   use. A clean build on the Pi could fail without them.
 
+## Parts (from Amazon listing titles; specs below are from memory, NOT verified)
+- Ultrasonic: HC-SR04 (about 15 deg cone, ~4 m nominal, 5 V echo needs level shifting for the 3.3 V ESP32,
+  not weatherproof). Sim cone (+/-0.131 rad) and 4 m range are close.
+- GPS: NEO-6M (GY-NEO6MV2). Typically ~2.5 m accuracy, 1 to 5 Hz, heading only while moving.
+- IMU: MPU-6050 (GY-521), 6-axis, NO magnetometer, so no absolute heading.
+- Lift: DIHOOL electric scissor lift table, listed 10.43 in to 43.31 in (~0.83 m travel). The xacro uses
+  1.2192 m. CONFIRM this is the real lift before changing `lift_travel`.
+
+## Concerns about the Pi (nothing measured yet)
+1. CPU load: S2 gives 3200 points per scan at 10 Hz feeding rf2o, Nav2 costmaps, and SLAM if used; MPPI cost
+   and Smac's ~29 s configure are also unmeasured.
+2. Timing: the EKFs logged `Failed to meet update rate!` in the sim; a loaded Pi could repeat it and Nav2 would
+   act on stale pose.
+3. Clean build: `rover_bringup/package.xml` probably lacks `exec_depend` entries (see Open questions).
+4. Sim-only nodes (`sim_lift_signal.py`, `gps_covariance.py`) must be left out of the Pi launch, and
+   `lidar_odom.launch.py` has no argument for that yet.
+
 ## Live tuning sliders (idea, not started)
 - Goal: a small tool with sliders to change values while the sim or rover runs (goal tolerances, speed limits,
   danger zones) with no rebuild or relaunch.
