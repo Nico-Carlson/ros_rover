@@ -1,8 +1,13 @@
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    use_sim_time_arg = DeclareLaunchArgument("use_sim_time", default_value="true")
+    use_sim_time = LaunchConfiguration("use_sim_time")
+
     rf2o = Node(
         package="rf2o_laser_odometry",
         executable="rf2o_laser_odometry_node",
@@ -17,7 +22,7 @@ def generate_launch_description():
                 "odom_frame_id": "odom",
                 "init_pose_from_topic": "",
                 "freq": 10.0,
-                "use_sim_time": True,
+                "use_sim_time": use_sim_time,
             }
         ],
     )
@@ -27,7 +32,7 @@ def generate_launch_description():
         executable="odom_covariance.py",
         name="odom_covariance",
         output="screen",
-        parameters=[{"use_sim_time": True}],
+        parameters=[{"use_sim_time": use_sim_time}],
     )
 
     scan_gate = Node(
@@ -35,7 +40,7 @@ def generate_launch_description():
         executable="scan_gate.py",
         name="scan_gate",
         output="screen",
-        parameters=[{"use_sim_time": True}],
+        parameters=[{"use_sim_time": use_sim_time}],
     )
 
     sim_lift = Node(
@@ -43,7 +48,7 @@ def generate_launch_description():
         executable="sim_lift_signal.py",
         name="sim_lift_signal",
         output="screen",
-        parameters=[{"use_sim_time": True}],
+        parameters=[{"use_sim_time": use_sim_time}],
     )
 
-    return LaunchDescription([scan_gate, sim_lift, rf2o, odom_cov])
+    return LaunchDescription([use_sim_time_arg, scan_gate, sim_lift, rf2o, odom_cov])
