@@ -33,7 +33,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - `main` always works; one descriptive branch per piece of work (no phase numbers)
 - Commit after each working step; merge to main (`--no-ff`) when a branch's goal is done
 - Tag each finished milestone before deleting any branch. Tags so far: `robot-model-v1`,
-  `gazebo-sim-v1`, `obstacle-world-v1`, `ultrasonics-v1`, `slam-mapping-v1`, `ekf-localization-v1`, `gps-covariance-v1`, `hardware-matched-ekf-v1`
+  `gazebo-sim-v1`, `obstacle-world-v1`, `ultrasonics-v1`, `slam-mapping-v1`, `ekf-localization-v1`, `gps-covariance-v1`,  `hardware-matched-ekf-v1`, `scan-gating-v1` 
 - Finished branches still exist (all merged). Deleting them is optional; the tags preserve the work.
 
 ## Frame conventions
