@@ -504,11 +504,27 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   (decide: revert to 1.5 or keep).
 - `controller_server: Failed to make progress` also fires mid-route sometimes; the behavior tree recovered
   once (goal still finished, status 4). Cause unknown.
-- UNTESTED (just written): `roam.py` publishes the boundary (yellow line) and current goal (green ball) on
-  `/roam_markers`. In RViz: Add > By topic > Marker. Check whether Nav2 paths stay inside the polygon.
-- NEXT: (1) recovery for "Start occupied": back up (Nav2 `backup` action, guess) then pick a new goal;
-  (2) goal watchdog (cancel goals that run too long); (3) stuck detector with both signals; (4) scan stops;
-  (5) `sim_lift_signal.py` at 10 Hz; (6) before merge: install(PROGRAMS), chmod +x, launch file.
+- WORKS (checked by eye in RViz, 2026-11-03): `roam.py` publishes the boundary (yellow line) and current goal
+  (green ball) on `/roam_markers`. In RViz: Add > By topic > Marker. To keep it, save the RViz config over
+  `src/rover_description/rviz/rover.rviz` (File > Save Config As) and run
+  `colcon build --packages-select rover_description` (launch uses the installed copy). Saving was not yet
+  confirmed. Still unchecked: whether Nav2 paths stay inside the polygon.
+- LOG FINDINGS (2026-11-03, one `~/sim_nav.log` run, 8 goals): 5 goals ended "Goal succeeded"; no
+  `Goal failed` line and no `Start occupied` in this log window. `Failed to make progress` fired 3 times
+  (about 30 s and 16 s apart in wall-clock time). Each time the controller reset its optimizer, the behavior tree
+  cleared the local costmap, and a new `Received a goal` followed within ~20 ms (Nav2's default
+  retry-after-clearing-costmap). The first retry succeeded; the second retry failed again, and a third goal
+  then succeeded (the lines between were filtered out by my grep, so what happened there is a guess).
+  - No `spin` or `backup` recovery ran in the log (only their startup lines), which weakens hypothesis (b)
+    above for this run. The log window was filtered, so this is "not seen", not "did not happen".
+  - Before the first failure (log lines 4045 to 4072), rf2o's pose was frozen at exactly
+    [-9.671636, 1.193520, -2.941370] for the ~1 s visible, so the rover was not moving. Not known whether it
+    was blocked, being sent zero velocity, or rf2o had stopped updating (the `Waiting for laser_scans....`
+    warnings appear there too, expected at ~6 Hz scans). CAUSE STILL UNKNOWN.
+  - Guess (unconfirmed): a stale obstacle in the local costmap, since clearing it lets the goal go on. The
+    spot (-9.7, 1.2) should be open ground if the origin is the spawn point (trees are at x 5 to 12).
+  - To narrow it down: next stall, note what is near the rover in RViz, and check `/cmd_vel` while it sits
+    still (`ros2 topic echo /cmd_vel --once`; this shows only the current command, not the past).
 
 ## Open questions
 - Exact ultrasonic part (model number) is unknown, so their range/cone are still placeholders.
