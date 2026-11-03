@@ -88,7 +88,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - [ ] Heading source for GPS fusion on real hardware (real IMU likely has no compass)
 - [x] Scan-gating node (lift down only)
 - [x] Nav2 in the sim (own launch, footprint, filtered scan; ultrasonic layer and real-hardware tuning still open)
-- [ ] Boundary roaming + stuck recovery
+- [ ] Boundary roaming + stuck recovery (in progress: polygon editor and roam goal generator done; goals stall, see "Roaming and stuck recovery")
 - [ ] Replace placeholder measurements and sensor specs with real ones
 - [ ] ESP32 firmware (with watchdog) + Pi hardware bridge
 - [ ] Field testing
@@ -442,6 +442,57 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Not done: ultrasonic range layer (LIDAR blind below ~0.57 m), real steer angle for
   `minimum_turning_radius`, scan-silent handling (a gated-off scan looks like "no obstacles"),
   Pi CPU check, boundary roaming and stuck recovery. Goals around trees at longer range are untested.
+
+## Roaming and stuck recovery (branch roaming-and-recovery, IN PROGRESS, not merged)
+- Plan: (1) boundary polygon editor, (2) roam goal generator, (3) scan stops (lift up, wait, lift down),
+  (4) stuck detector (BOTH signals: commanded vs rf2o speed, and no progress toward the goal) + recovery,
+  (5) a supervisor tying them together.
+- DONE (1) `scripts/boundary_canvas.py`: RViz "Publish Point" clicks become a closed polygon. RViz Fixed Frame
+  must be `map` (clicks in `odom` are ignored). Publish Point only works on a solid surface, so the node
+  publishes a 200 x 200 m flat slab as a Marker (`/boundary_canvas`); the line is `/boundary_line`. Click
+  within 3 m of the first point (needs 3+ points) to close; closing saves `config/boundary.yaml` as lat/lon
+  around the datum. `ros2 service call /clear_boundary std_srvs/srv/Empty` cancels at any time. The datum
+  (45.0, -110.0) now lives in THREE places that must match: world file, `ekf.yaml`, this node's parameters.
+  Assumes map origin = datum, x east, y north (inferred from the GPS tests, not separately checked).
+  The saved boundary is not displayed in RViz on a new run (the line only draws that run's clicks).
+- DONE (2) `scripts/roam.py`: `load_boundary`, `point_in_polygon`, `VisitGrid` (5 m cells, counts entries),
+  `SmoothNoise` + `Walker` (hops 5 to 8 m, up to +/-60 deg turn per hop; when every cell within 10 m has
+  >= 1 visit it targets the least-visited cell, in short hops), and `RoamNode` (reads `map -> base_footprint`
+  from TF, sends `NavigateToPose` goals, a 1 s timer marks cells and sends the next goal when `busy` is
+  False). Offline test: 26 cells, 23 visited after 60 hops. Run with
+  `python3 ~/rover_ws/src/rover_bringup/scripts/roam.py --ros-args -p use_sim_time:=true` (needs
+  `use_sim_time` or timestamps do not match the sim).
+- NOT YET DONE before merge: add `boundary_canvas.py` and `roam.py` to `install(PROGRAMS ...)` and `chmod +x`
+  them, add a launch file, decide whether `boundary.yaml` is committed (it is test data from the sim).
+- OPEN PROBLEM: roaming stalls. One goal succeeded (status 4, ~38 s). Others were sent and never reported a
+  result, so the loop stops waiting. Seen once: `controller_server: Failed to make progress` then follow_path
+  aborted. Seen once: planner `Start occupied` at (4.27, -1.10) then `Goal failed`. CAUSE UNKNOWN.
+  Hypotheses (all unconfirmed): (a) the Ackermann rover cannot turn in place, so it sits on the goal wiggling
+  because the final HEADING is out of tolerance; `yaw_goal_tolerance` was changed 1.5 -> 3.14 in
+  `nav2_params.yaml` to test this, but the two test runs after the change were stopped before an outcome, so
+  it is UNTESTED; (b) Nav2's recovery behaviors (spin, backup) run for a long time on an Ackermann; (c) the
+  1.5 m `inflation_radius` placeholder leaves no free start/goal cell near obstacles.
+- RULED OUT (measured): the velocity chain (`/cmd_vel_nav` ~19 Hz, `/cmd_vel_smoothed` ~20 Hz, `/cmd_vel`
+  13 to 15 Hz, rover moves) and the scan gate (`/scan` ~6.7 Hz, `/scan_filtered` ~6.2 Hz, `/lift_down`
+  published).
+- Sim performance: Gazebo real-time factor ~52 to 55%, RViz ~31 fps, `/scan` ~6.7 Hz (was 8.6 to 8.9 in the
+  notes). `/lift_down` runs at ~400 Hz because `sim_lift_signal.py` publishes on every joint-state message;
+  probably wasteful and may contribute (guess, untested). Fix later: publish it from a 10 Hz timer. The sim is
+  too slow to say anything about the Pi.
+- Probably harmless: rf2o `Waiting for laser_scans....` repeating (rf2o runs at 10 Hz but scans arrive at
+  ~6 Hz; inferred). `Failed to meet update rate!` from the EKFs again.
+- RViz tip: with Fixed Frame `map` everything attached to `odom` shakes, probably because `map -> odom` follows
+  the noisy sim GPS (guess). Use `odom` to watch driving, `map` only to click boundary points.
+- Debug tip: launch with `ros2 launch rover_bringup sim_nav.launch.py 2>&1 | tee ~/sim_nav.log`, then
+  `grep -i "abort\|fail\|occupied\|progress" ~/sim_nav.log | tail -20`. The terminal scrolls too fast to read.
+- Lift: the DIHOOL scissor lift (confirmed the real one) is listed at ~0.83 m of travel (10.43 in to 43.31 in),
+  but the xacro `lift_travel` is 1.2192 m. Reconcile before relying on LIDAR height.
+- Not possible easily: viewing the SLAM map alongside the EKF stack (both publish `map -> odom`).
+- NEXT: (1) rerun roaming with `yaw_goal_tolerance` 3.14 and give each goal up to 3 min (sim runs at half
+  speed); note whether `Goal finished` prints and the next goal is sent. (2) Add a goal watchdog in `roam.py`
+  (cancel a goal that runs too long and pick a new one), then the stuck detector and recovery. (3) Publish the
+  boundary and goals as RViz markers from the roam node. (4) Scan stops (sim lift cannot move, so stub it).
+  (5) Fix `sim_lift_signal.py` rate.
 
 ## Open questions
 - Exact ultrasonic part (model number) is unknown, so their range/cone are still placeholders.
