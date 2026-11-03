@@ -205,7 +205,8 @@ class RoamNode(Node):
         msg.pose.pose.orientation.z = math.sin(self.walker.heading / 2)
         msg.pose.pose.orientation.w = math.cos(self.walker.heading / 2)
         self.get_logger().info(f"Sending goal ({goal[0]:.1f}, {goal[1]:.1f})")
-        self.client.send_goal_async(msg).add_done_callback(self.on_goal_response)
+        self.goal_future = self.client.send_goal_async(msg)
+        self.goal_future.add_done_callback(self.on_goal_response)
         return True
 
     def on_goal_response(self, future):
@@ -214,6 +215,10 @@ class RoamNode(Node):
             self.get_logger().warn("Goal rejected")
             self.busy = False
             return
+        self.get_logger().info("Goal accepted")
+        self.goal_handle = handle
+        self.result_future = handle.get_result_async()
+        self.result_future.add_done_callback(self.on_result)
 
     def on_result(self, future):
         status = future.result().status
