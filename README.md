@@ -40,6 +40,13 @@ Not yet implemented for the physical rover:
 - Final sensor measurements and navigation tuning
 - A reliable real-world heading source for GPS fusion
 
+The planned hardware path is to run the high-level ROS 2 stack on a Raspberry
+Pi and use two ESP32 microcontrollers for low-level rover control. The ESP32
+firmware will be developed in the Arduino IDE and will handle motor and
+steering commands, sensor interfaces, lift limit switches, watchdog behavior,
+and communication with the Pi. The Pi-side bridge will translate between ROS 2
+topics and the ESP32 serial or network protocol.
+
 ## System overview
 
 The main simulated data flow is:
@@ -249,6 +256,46 @@ configuration in `rover.gazebo.xacro`. Current modeled hardware includes:
 The measurements in the model are a mixture of measured values and placeholders.
 Check the comments in the Xacro and `NOTES.md` before using the model for
 hardware calibration.
+
+## Planned physical rover integration
+
+The simulation is being used to validate the software architecture before
+connecting the real rover. The intended physical deployment is:
+
+```text
+Raspberry Pi running ROS 2
+    |
+    +-- ROS 2 hardware bridge
+            |
+            +-- Serial or network link
+                    |
+                    +-- ESP32 motor and steering controller
+                    +-- ESP32 sensor and lift controller
+```
+
+The hardware implementation will be added incrementally:
+
+1. Measure the physical rover and replace placeholder dimensions, masses,
+   steering limits, sensor positions, and covariances in the model and
+   configuration files.
+2. Write Arduino IDE firmware for the ESP32 boards, including motor control,
+   steering control, sensor acquisition, lift limit-switch handling, and a
+   command-timeout watchdog that stops the rover if communication is lost.
+3. Implement the Raspberry Pi hardware bridge so ROS 2 publishes commands to
+   the ESP32 boards and receives wheel, IMU, GPS, ultrasonic, and lift-state
+   data.
+4. Replace simulated topics and Gazebo bridges with real sensor drivers while
+   preserving the ROS 2 interfaces used by localization and Nav2.
+5. Test localization and navigation at low speed, tune covariances and
+   turning-radius limits with recorded field data, and add physical emergency
+   stop behavior.
+6. Add boundary roaming, stuck recovery, and field-test procedures once basic
+   point-to-point navigation is reliable.
+
+The real rover is expected to use a Raspberry Pi, two ESP32 boards, an RPLIDAR
+S2, GPS, IMU, and ultrasonic sensors. Exact sensor models and several physical
+measurements are still open questions; `NOTES.md` records which values are
+measured and which remain provisional.
 
 ## Development notes
 
