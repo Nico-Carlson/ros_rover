@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+import rclpy
+from geometry_msgs.msg import PoseStamped
+from nav2_msgs.action import NavigateToPose
+from rclpy.action import ActionClient
+from rclpy.node import Node
+from tf2_ros import Buffer, TransformListener
+
 import random
 import math
 import os
@@ -143,22 +150,77 @@ class Walker:
         return None
 
 
-if __name__ == "__main__":
-    path = os.path.expanduser("~/rover_ws/src/rover_bringup/config/boundary.yaml")
-    polygon = load_boundary(path)
-    grid = VisitGrid(polygon)
-    walker = Walker(polygon, grid)
-    x, y = 0.0, 0.0
-    grid.mark(x, y)
-    for n in range(60):
-        goal = walker.next_goal(x, y)
+class RoamNode(Node):
+    def __init__(self):
+        super().__init__("roam")
+        self.declare_parameter(
+            "boundary_file",
+            os.path.expanduser("~/rover_ws/src/rover_bringup/config/boundary.yaml"),
+        )
+        polygon = load_boundary(self.get_parameter("boundary_file").value)
+        self.grid = VisitGrid(polygon)
+        self.walker = Walker(polygon, self.grid)
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.client = ActionClient(self, NavigateToPose, "navigate_to_pose")
+        self.started = False
+        self.create_timer(1.0, self.try_start)
+
+    def get_pose(self):
+        try:
+            t = self.tf_buffer.lookup_transform(
+                "map", "base_footprint", rclpy.time.Time()
+            )
+        except Exception as e:
+            self.get_logger().warn(f"No pose yet: {e}")
+            return None
+        return t.transform.translation.x, t.transform.translation.y
+
+    def try_start(self):
+        if self.started:
+            return
+        if not self.client.server_is_ready():
+            self.get_logger().info("Waiting for Nav2...")
+            return
+        if self.send_next_goal():
+            self.started = True
+
+    def send_next_goal(self):
+        pose = self.get_pose()
+        if pose is None:
+            return False
+        self.grid.mark(*pose)
+        goal = self.walker.next_goal(*pose)
         if goal is None:
-            print("no goal found at hop", n)
-            break
-        x, y = goal
-        grid.mark(x, y)
-        if n < 8:
-            print(f"hop {n}: ({x:.1f}, {y:.1f})")
-    unvisited = sum(1 for c in grid.counts.values() if c == 0)
-    print("unvisited cells:", unvisited, "of", len(grid.counts))
-    print("max visits:", max(grid.counts.values()))
+            self.get_logger().warn("No goal found inside the boundary")
+            return False
+        msg = NavigateToPose.Goal()
+        msg.pose.header.frame_id = "map"
+        msg.pose.header.stamp = self.get_clock().now().to_msg()
+        msg.pose.pose.position.x = goal[0]
+        msg.pose.pose.position.y = goal[1]
+        msg.pose.pose.orientation.z = math.sin(self.walker.heading / 2)
+        msg.pose.pose.orientation.w = math.cos(self.walker.heading / 2)
+        self.get_logger().info(f"Sending goal ({goal[0]:.1f}, {goal[1]:.1f})")
+        self.client.send_goal_async(msg).add_done_callback(self.on_goal_response)
+        return True
+
+    def on_goal_response(self, future):
+        handle = future.result()
+        if not handle.accepted:
+            self.get_logger().warn("Goal rejected")
+            return
+        handle.get_result_async().add_done_callback(self.on_result)
+
+    def on_result(self, future):
+        status = future.result().status
+        self.get_logger().info(f"Goal finished with status {status}")
+
+
+def main():
+    rclpy.init()
+    rclpy.spin(RoamNode())
+
+
+if __name__ == "__main__":
+    main()
