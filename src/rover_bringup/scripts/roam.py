@@ -163,7 +163,7 @@ class RoamNode(Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.client = ActionClient(self, NavigateToPose, "navigate_to_pose")
-        self.started = False
+        self.busy = False
         self.create_timer(1.0, self.try_start)
 
     def get_pose(self):
@@ -177,13 +177,16 @@ class RoamNode(Node):
         return t.transform.translation.x, t.transform.translation.y
 
     def try_start(self):
-        if self.started:
+        pose = self.get_pose()
+        if pose is not None:
+            self.grid.mark(*pose)
+        if self.busy:
             return
         if not self.client.server_is_ready():
             self.get_logger().info("Waiting for Nav2...")
             return
         if self.send_next_goal():
-            self.started = True
+            self.busy = True
 
     def send_next_goal(self):
         pose = self.get_pose()
@@ -209,12 +212,16 @@ class RoamNode(Node):
         handle = future.result()
         if not handle.accepted:
             self.get_logger().warn("Goal rejected")
+            self.busy = False
             return
-        handle.get_result_async().add_done_callback(self.on_result)
 
     def on_result(self, future):
         status = future.result().status
-        self.get_logger().info(f"Goal finished with status {status}")
+        unvisited = sum(1 for c in self.grid.counts.values() if c == 0)
+        self.get_logger().info(
+            f"Goal finished with status {status}, {unvisited} cells unvisited"
+        )
+        self.busy = False
 
 
 def main():
