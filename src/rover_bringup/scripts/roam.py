@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import rclpy
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import Point, PoseStamped
+from visualization_msgs.msg import Marker
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient
 from rclpy.node import Node
@@ -160,6 +161,9 @@ class RoamNode(Node):
         polygon = load_boundary(self.get_parameter("boundary_file").value)
         self.grid = VisitGrid(polygon)
         self.walker = Walker(polygon, self.grid)
+        self.polygon = polygon
+        self.goal_xy = None
+        self.marker_pub = self.create_publisher(Marker, "roam_markers", 10)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.client = ActionClient(self, NavigateToPose, "navigate_to_pose")
@@ -176,7 +180,41 @@ class RoamNode(Node):
             return None
         return t.transform.translation.x, t.transform.translation.y
 
+    def publish_markers(self):
+        line = Marker()
+        line.header.frame_id = "map"
+        line.ns = "roam_boundary"
+        line.id = 0
+        line.type = Marker.LINE_STRIP
+        line.action = Marker.ADD
+        line.pose.orientation.w = 1.0
+        line.scale.x = 0.3
+        line.color.r = 1.0
+        line.color.g = 0.8
+        line.color.a = 1.0
+        for x, y in self.polygon + [self.polygon[0]]:
+            line.points.append(Point(x=x, y=y, z=0.1))
+        self.marker_pub.publish(line)
+        if self.goal_xy is not None:
+            ball = Marker()
+            ball.header.frame_id = "map"
+            ball.ns = "roam_goal"
+            ball.id = 1
+            ball.type = Marker.SPHERE
+            ball.action = Marker.ADD
+            ball.pose.position.x = self.goal_xy[0]
+            ball.pose.position.y = self.goal_xy[1]
+            ball.pose.position.z = 0.3
+            ball.pose.orientation.w = 1.0
+            ball.scale.x = 0.6
+            ball.scale.y = 0.6
+            ball.scale.z = 0.6
+            ball.color.g = 1.0
+            ball.color.a = 1.0
+            self.marker_pub.publish(ball)
+
     def try_start(self):
+        self.publish_markers()
         pose = self.get_pose()
         if pose is not None:
             self.grid.mark(*pose)
@@ -197,6 +235,7 @@ class RoamNode(Node):
         if goal is None:
             self.get_logger().warn("No goal found inside the boundary")
             return False
+        self.goal_xy = goal
         msg = NavigateToPose.Goal()
         msg.pose.header.frame_id = "map"
         msg.pose.header.stamp = self.get_clock().now().to_msg()

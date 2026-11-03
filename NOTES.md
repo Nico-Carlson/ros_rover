@@ -493,6 +493,22 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   (cancel a goal that runs too long and pick a new one), then the stuck detector and recovery. (3) Publish the
   boundary and goals as RViz markers from the roam node. (4) Scan stops (sim lift cannot move, so stub it).
   (5) Fix `sim_lift_signal.py` rate.
+- FIXED: roaming stalls were partly a lost-result bug. rclpy's action client holds only a weak reference to the
+  goal handle, so `roam.py` now keeps `self.goal_future`, `self.goal_handle` and `self.result_future`. After
+  this, 4 goals in a row finished (status 4), each followed by the next, and unvisited cells fell 22 -> 16.
+  (Cause inferred from the fix working, not proven.)
+- The real Nav2 failure is "Start occupied": the rover parks next to a tree, the planner says its own
+  footprint is too close to an obstacle, and the goal aborts. The costmap has no map, so it only sees the tree
+  as the rover approaches, and a goal chosen blind can land next to it. The heading hypothesis
+  (`yaw_goal_tolerance` 3.14) is UNSUPPORTED; the change is still uncommitted in `nav2_params.yaml`
+  (decide: revert to 1.5 or keep).
+- `controller_server: Failed to make progress` also fires mid-route sometimes; the behavior tree recovered
+  once (goal still finished, status 4). Cause unknown.
+- UNTESTED (just written): `roam.py` publishes the boundary (yellow line) and current goal (green ball) on
+  `/roam_markers`. In RViz: Add > By topic > Marker. Check whether Nav2 paths stay inside the polygon.
+- NEXT: (1) recovery for "Start occupied": back up (Nav2 `backup` action, guess) then pick a new goal;
+  (2) goal watchdog (cancel goals that run too long); (3) stuck detector with both signals; (4) scan stops;
+  (5) `sim_lift_signal.py` at 10 Hz; (6) before merge: install(PROGRAMS), chmod +x, launch file.
 
 ## Open questions
 - Exact ultrasonic part (model number) is unknown, so their range/cone are still placeholders.
