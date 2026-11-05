@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import rclpy
+from std_msgs.msg import Empty
 from std_srvs.srv import Trigger
 from geometry_msgs.msg import Point, PoseStamped
 from visualization_msgs.msg import Marker
@@ -173,6 +174,7 @@ class RoamNode(Node):
         self.goal_handle = None
         self.create_service(Trigger, "start_patrol", self.on_start_patrol)
         self.create_service(Trigger, "stop_patrol", self.on_stop_patrol)
+        self.create_subscription(Empty, "boundary_closed", self.on_boundary_closed, 10)
         self.create_timer(1.0, self.try_start)
 
     def get_pose(self):
@@ -265,6 +267,14 @@ class RoamNode(Node):
         self.goal_handle = handle
         self.result_future = handle.get_result_async()
         self.result_future.add_done_callback(self.on_result)
+
+    def on_boundary_closed(self, msg):
+        path = self.get_parameter("boundary_file").value
+        self.polygon = load_boundary(path)
+        self.grid = VisitGrid(self.polygon)
+        self.walker = Walker(self.polygon, self.grid)
+        self.goal_xy = None
+        self.get_logger().info(f"Loaded new boundary with {len(self.polygon)} corners")
 
     def on_start_patrol(self, request, response):
         self.patrolling = True
