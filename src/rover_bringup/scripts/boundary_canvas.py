@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+from std_msgs.msg import Empty as EmptyMsg
 import yaml
 import math
 from std_srvs.srv import Empty
@@ -29,6 +30,7 @@ class BoundaryCanvas(Node):
         self.output_file = self.get_parameter("output_file").value
         self.create_service(Empty, "clear_boundary", self.on_clear)
         self.line_pub = self.create_publisher(Marker, "boundary_line", 1)
+        self.closed_pub = self.create_publisher(EmptyMsg, "boundary_closed", 1)
         self.create_subscription(PointStamped, "clicked_point", self.on_click, 10)
 
     def publish_canvas(self):
@@ -59,6 +61,7 @@ class BoundaryCanvas(Node):
         if len(self.points) >= 3 and self.near_first(msg.point):
             self.closed = True
             self.save()
+            self.closed_pub.publish(EmptyMsg())
             self.get_logger().info(f"Boundary closed with {len(self.points)} corners")
             self.publish_line()
             return
