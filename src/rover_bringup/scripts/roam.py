@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import rclpy
+from std_srvs.srv import Trigger
 from geometry_msgs.msg import Point, PoseStamped
 from visualization_msgs.msg import Marker
 from nav2_msgs.action import NavigateToPose
@@ -168,6 +169,10 @@ class RoamNode(Node):
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.client = ActionClient(self, NavigateToPose, "navigate_to_pose")
         self.busy = False
+        self.patrolling = False
+        self.goal_handle = None
+        self.create_service(Trigger, "start_patrol", self.on_start_patrol)
+        self.create_service(Trigger, "stop_patrol", self.on_stop_patrol)
         self.create_timer(1.0, self.try_start)
 
     def get_pose(self):
@@ -218,6 +223,8 @@ class RoamNode(Node):
         pose = self.get_pose()
         if pose is not None:
             self.grid.mark(*pose)
+            if not self.patrolling:
+                return
         if self.busy:
             return
         if not self.client.server_is_ready():
@@ -259,6 +266,20 @@ class RoamNode(Node):
         self.result_future = handle.get_result_async()
         self.result_future.add_done_callback(self.on_result)
 
+    def on_start_patrol(self, request, response):
+        self.patrolling = True
+        response.success = True
+        response.message = "Patrol started"
+        return response
+
+    def on_stop_patrol(self, request, response):
+        self.patrolling = False
+        if self.busy and self.goal_handle is not None:
+            self.goal_handle.cancel_goal_async()
+        response.success = True
+        response.message = "Patrol stopped"
+        return response
+
     def on_result(self, future):
         status = future.result().status
         unvisited = sum(1 for c in self.grid.counts.values() if c == 0)
@@ -266,6 +287,7 @@ class RoamNode(Node):
             f"Goal finished with status {status}, {unvisited} cells unvisited"
         )
         self.busy = False
+        self.goal_handle = None
 
 
 def main():
