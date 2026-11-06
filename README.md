@@ -1,9 +1,6 @@
 # ROS Rover
 
-ROS 2 software and simulation for an autonomous Ackermann-steered rover intended
-for forest navigation and outdoor data collection. The project models the rover
-in Gazebo, publishes its simulated sensors into ROS 2, estimates its position,
-and uses Nav2 to plan and follow paths around obstacles.
+ROS 2 software and simulation for an autonomous Ackermann-steered rover intended for forest navigation and outdoor data collection. The project models the rover in Gazebo, publishes its simulated sensors into ROS 2, estimates its position, and uses Nav2 to plan and follow paths around obstacles.
 
 The long-term rover is intended to support:
 
@@ -12,13 +9,11 @@ The long-term rover is intended to support:
 - Recovery when the rover becomes stuck
 - Camera-data collection for a separate school project
 
-The repository currently focuses on the robot model, simulation, localization,
-SLAM, scan gating, and simulated Nav2 navigation. Real-hardware integration is
-planned but is not complete.
+The repository currently focuses on the robot model, simulation, localization, SLAM, scan gating, simulated Nav2 navigation, and boundary roaming with an operator control panel. Real-hardware integration is planned but is not complete.
 
 ## Current status
 
-The following workflows are implemented and tested in simulation:
+Implemented and tested in simulation:
 
 - Ackermann rover model with four wheels and steering
 - Gazebo Harmonic simulation with an obstacle world
@@ -28,58 +23,49 @@ The following workflows are implemented and tested in simulation:
 - Dual `robot_localization` EKFs for local and global state estimates
 - GPS covariance processing and GPS fusion in the global filter
 - Scan gating so navigation uses the scan only when the simulated lift is down
-- SLAM Toolbox mapping
+- SLAM Toolbox mapping (separate session)
 - Nav2 path planning and control using rolling costmaps
 - RViz visualization and interactive goal selection
+- Boundary drawing in RViz and roaming inside the boundary
+- Goal watchdog that cancels goals that run too long
+- Qt control panel: boundary and patrol buttons, plus live parameter sliders for roaming and Nav2
 
-Not yet implemented for the physical rover:
+Not yet implemented:
 
+- Stuck detection and recovery
 - ESP32 firmware and the Raspberry Pi hardware bridge
 - Real sensor drivers and field-tested calibration
-- Boundary roaming and stuck recovery
 - Final sensor measurements and navigation tuning
 - A reliable real-world heading source for GPS fusion
 
-The planned hardware path is to run the high-level ROS 2 stack on a Raspberry
-Pi and use two ESP32 microcontrollers for low-level rover control. The ESP32
-firmware will be developed in the Arduino IDE and will handle motor and
-steering commands, sensor interfaces, lift limit switches, watchdog behavior,
-and communication with the Pi. The Pi-side bridge will translate between ROS 2
-topics and the ESP32 serial or network protocol.
+The planned hardware path is to run the high-level ROS 2 stack on a Raspberry Pi and use two ESP32 microcontrollers for low-level rover control. The ESP32 firmware will be developed in the Arduino IDE and will handle motor and steering commands, sensor interfaces, lift limit switches, watchdog behavior, and communication with the Pi. The Pi-side bridge will translate between ROS 2 topics and the ESP32 protocol.
 
 ## System overview
 
-The main simulated data flow is:
-
-```text
+```
 Gazebo Harmonic
     |
-    +-- ROS-Gazebo bridge --> /scan, /imu, /gps/fix, /odom, /joint_states
+    +-- ROS-Gazebo bridge --> /scan, /imu, /gps/fix, /joint_states
     |
-    +-- scan_gate --> /scan_filtered --> rf2o_laser_odometry
-    |                                   |
-    |                                   +--> /odom_rf2o_cov
+    +-- scan_gate --> /scan_filtered --> rf2o_laser_odometry --> /odom_rf2o_cov
     |
     +-- robot_localization EKFs
             |
             +--> /odometry/local  --> Nav2
             +--> /odometry/global --> map-frame navigation
 
-RViz 2D Goal Pose --> Nav2 --> /cmd_vel --> Gazebo rover
+RViz 2D Goal Pose --------+
+roam.py (boundary goals) -+--> Nav2 --> /cmd_vel --> Gazebo rover
+control_panel.py --> services and parameters on roam, boundary_canvas, Nav2
 ```
 
-The rover uses `base_footprint` as its ground-level navigation frame and
-`base_link` above it. The simulated LIDAR is mounted on a lift platform; the
-navigation stack is designed to operate with the lift fully lowered.
+The rover uses `base_footprint` as its ground-level navigation frame and `base_link` above it. The simulated LIDAR is mounted on a lift platform; the navigation stack is designed to operate with the lift fully lowered.
 
 ## Repository layout
 
-```text
+```
 src/
-├── rover_basics/
-│   ├── rover_basics/       # Simple publisher/subscriber examples
-│   ├── launch/             # Launches both example nodes
-│   └── test/               # Python package checks
+├── rover_basics/           # Beginner publisher/subscriber examples
 ├── rover_description/
 │   ├── urdf/               # Rover model and Gazebo sensor plugins
 │   ├── worlds/             # Gazebo world
@@ -87,43 +73,43 @@ src/
 │   └── rviz/               # Saved RViz configuration
 └── rover_bringup/
     ├── config/             # EKF, SLAM, and Nav2 parameters
-    ├── launch/             # Localization, SLAM, odometry, and Nav2
-    └── scripts/            # Covariance and scan-gating helper nodes
+    ├── launch/             # Localization, SLAM, odometry, Nav2, full sim
+    └── scripts/            # Helper nodes (see below)
 ```
 
-The `rf2o_laser_odometry` package is an external dependency. It is intentionally
-ignored by this repository and must be available in the same ROS workspace.
+Helper nodes in `rover_bringup/scripts/`:
+
+| Script | Purpose |
+|---|---|
+| `scan_gate.py` | Passes LIDAR scans on only while the lift is down |
+| `sim_lift_signal.py` | Simulation stand-in for the lift limit switch |
+| `gps_covariance.py` | Adds covariance to the simulated GPS (simulation only) |
+| `odom_covariance.py` | Adds covariance to rf2o odometry |
+| `boundary_canvas.py` | Draws and saves a boundary polygon from RViz clicks |
+| `roam.py` | Sends roaming goals inside the boundary; patrol services |
+| `control_panel.py` | Qt panel for patrol control and live tuning |
+
+The `rf2o_laser_odometry` package is an external dependency. It is intentionally ignored by this repository and must be cloned into the same workspace.
 
 ## Requirements
-
-The project is developed with:
 
 - Ubuntu 24.04
 - ROS 2 Jazzy
 - Gazebo Harmonic
-- `colcon`
-- Nav2
-- `robot_localization`
-- `slam_toolbox`
+- colcon
+- Nav2, `robot_localization`, `slam_toolbox`
 - `ros_gz_sim` and `ros_gz_bridge`
 - `rf2o_laser_odometry`
-- `teleop_twist_keyboard` for optional manual driving
-
-Install the ROS packages required by the launch files using the package manager
-for your ROS 2 Jazzy installation. The external `rf2o_laser_odometry` package
-must also be cloned into the workspace `src` directory.
+- PyQt5 (control panel)
+- `teleop_twist_keyboard` (optional manual driving)
 
 ## Build the workspace
-
-Clone the repository into a ROS 2 workspace, install the dependencies, and
-build the packages:
 
 ```bash
 mkdir -p ~/rover_ws/src
 cd ~/rover_ws/src
 git clone https://github.com/Nico-Carlson/ros_rover.git
-
-# Place rf2o_laser_odometry in ~/rover_ws/src as well.
+git clone -b ros2 https://github.com/MAPIRlab/rf2o_laser_odometry.git
 
 cd ~/rover_ws
 source /opt/ros/jazzy/setup.bash
@@ -132,8 +118,7 @@ colcon build
 source install/setup.bash
 ```
 
-After changing a package, rebuild that package before launching it. ROS launch
-files use the installed copy of the package:
+ROS launch files use the installed copy of each package, so rebuild after changing a package:
 
 ```bash
 colcon build --packages-select rover_description rover_bringup
@@ -142,8 +127,7 @@ source install/setup.bash
 
 ## Run the simulation
 
-The recommended command starts Gazebo, scan gating, LIDAR odometry, both EKFs,
-Nav2, and RViz in sequence:
+One command starts Gazebo, scan gating, LIDAR odometry, both EKFs, Nav2, RViz, the boundary canvas, the roaming node, and the control panel, in sequence on timers:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
@@ -151,45 +135,36 @@ source ~/rover_ws/install/setup.bash
 ros2 launch rover_bringup sim_nav.launch.py
 ```
 
-The combined launch uses startup delays so each subsystem can provide the
-topics and transforms required by the next one. Nav2 may take approximately
-30 seconds after launch to become active.
+Nav2 may take about 30 seconds after launch to become active.
 
-In RViz, use **2D Goal Pose** to send a navigation goal. The rover should plan
-and drive toward the goal in the simulated obstacle world.
+**Point-to-point:** in RViz, use *2D Goal Pose*. The rover plans and drives to the goal.
 
-To drive manually when Nav2 has no active goal, open another terminal and run:
+**Boundary patrol:**
+
+1. In the control panel, press **New Boundary**. This stops any patrol and clears the old shape.
+2. In RViz, set the Fixed Frame to `map`, choose *Publish Point*, and click three or more corners. Click within 3 m of the first corner to close the shape. The boundary is saved to `config/boundary.yaml` and loaded by the roaming node.
+3. Press **Start Patrol**. The rover roams inside the boundary, favoring less-visited areas. Press **Stop Patrol** to cancel the current goal and stop.
+
+The panel's sliders (goal timeout, speed limits, goal tolerances, costmap inflation and cost falloff) change parameters on the running nodes. They are not saved: copy values you want to keep into `nav2_params.yaml`.
+
+To drive manually when Nav2 has no active goal:
 
 ```bash
-source /opt/ros/jazzy/setup.bash
-source ~/rover_ws/install/setup.bash
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
 
-Stop the launch process with `Ctrl+C`. Closing the Gazebo window alone does not
-stop all of the ROS and Gazebo processes.
+Stop the launch with Ctrl+C. Closing the Gazebo window alone does not stop all ROS and Gazebo processes.
 
 ## Run individual components
 
-The combined launch is convenient for navigation testing, but the components
-can also be started separately:
-
 ```bash
-# Terminal 1: Gazebo, robot model, and ROS-Gazebo bridge
-ros2 launch rover_description sim.launch.py
-
-# Terminal 2: Scan gate and LIDAR odometry
-ros2 launch rover_bringup lidar_odom.launch.py
-
-# Terminal 3: Local and global EKFs
-ros2 launch rover_bringup ekf.launch.py
-
-# Terminal 4: Nav2
-ros2 launch rover_bringup nav2.launch.py
+ros2 launch rover_description sim.launch.py      # Gazebo, model, bridge
+ros2 launch rover_bringup lidar_odom.launch.py   # Scan gate and LIDAR odometry
+ros2 launch rover_bringup ekf.launch.py          # Local and global EKFs
+ros2 launch rover_bringup nav2.launch.py         # Nav2 (start last)
 ```
 
-For hardware-oriented launches, the localization and Nav2 launch files accept
-`use_sim_time:=false`:
+For hardware-oriented launches, these accept `use_sim_time:=false`:
 
 ```bash
 ros2 launch rover_bringup ekf.launch.py use_sim_time:=false
@@ -197,27 +172,19 @@ ros2 launch rover_bringup lidar_odom.launch.py use_sim_time:=false
 ros2 launch rover_bringup nav2.launch.py use_sim_time:=false
 ```
 
-Other useful launch files include:
+Other launch files:
 
 ```bash
-# Start RViz with the robot model and joint-state GUI
-ros2 launch rover_description display.launch.py
-
-# Start SLAM Toolbox for a mapping session
-ros2 launch rover_bringup slam.launch.py
-
-# Run the beginner publisher/subscriber example
-ros2 launch rover_basics hello.launch.py
+ros2 launch rover_description display.launch.py   # RViz with the model and joint GUI
+ros2 launch rover_bringup slam.launch.py          # SLAM Toolbox mapping session
+ros2 launch rover_basics hello.launch.py          # Beginner example
 ```
 
-`slam.launch.py` is a separate mapping workflow. Do not run it at the same time
-as the EKF workflow because both systems attempt to publish the `map -> odom`
-transform.
+`slam.launch.py` is a separate mapping workflow. Do not run it together with the EKF workflow, because both publish the `map -> odom` transform.
 
 ## Navigation details
 
-Nav2 is configured specifically for an Ackermann-style rover rather than a
-holonomic robot:
+Nav2 is configured for an Ackermann-style rover rather than a holonomic robot:
 
 - Rolling-window local and global costmaps are used instead of a static map.
 - The Smac Hybrid-A* planner uses Reeds-Shepp motion and permits reversing.
@@ -226,43 +193,31 @@ holonomic robot:
 - The command chain ends at `/cmd_vel`, which is bridged to the simulator.
 - Obstacle and collision-monitor scans use `/scan_filtered`.
 
-The main configuration files are:
-
 | File | Purpose |
-| --- | --- |
-| `src/rover_bringup/config/nav2_params.yaml` | Nav2 planners, controller, costmaps, and tolerances |
+|---|---|
+| `src/rover_bringup/config/nav2_params.yaml` | Nav2 planners, controller, costmaps, tolerances |
 | `src/rover_bringup/config/ekf.yaml` | Local/global EKF and GPS transform parameters |
-| `src/rover_bringup/config/slam_mapping.yaml` | SLAM Toolbox mapping parameters |
+| `src/rover_bringup/config/slam_mapping.yaml` | SLAM Toolbox parameters |
 | `src/rover_description/rviz/rover.rviz` | Saved RViz displays and tools |
 
-Several navigation values are still simulation-tuned placeholders, including
-the maximum steering angle, turning radius, speed limits, costmap inflation,
-and some sensor covariances.
+Several navigation values are still simulation-tuned placeholders, including the maximum steering angle, turning radius, speed limits, costmap inflation, and some sensor covariances.
 
 ## Robot model and sensors
 
-The model is defined in
-`src/rover_description/urdf/rover.urdf.xacro`, with Gazebo plugins and sensor
-configuration in `rover.gazebo.xacro`. Current modeled hardware includes:
+The model is defined in `src/rover_description/urdf/rover.urdf.xacro`, with Gazebo plugins and sensors in `rover.gazebo.xacro`. Modeled hardware:
 
-- Ackermann steering with a wheelbase of approximately 0.686 m
-- Wheel radius of approximately 0.159 m
+- Ackermann steering, wheelbase about 0.686 m
+- Wheel radius about 0.159 m
 - RPLIDAR-style laser scanner on a lift platform
-- IMU
-- GPS receiver
+- IMU and GPS receiver
 - Six simulated ultrasonic range sensors
-- Joint states and wheel odometry
+- Joint states and wheel odometry (simulation only; the real rover has no wheel encoders)
 
-The measurements in the model are a mixture of measured values and placeholders.
-Check the comments in the Xacro and `NOTES.md` before using the model for
-hardware calibration.
+Dimensions are a mixture of measured values and placeholders. See `NOTES.md` for which is which.
 
 ## Planned physical rover integration
 
-The simulation is being used to validate the software architecture before
-connecting the real rover. The intended physical deployment is:
-
-```text
+```
 Raspberry Pi running ROS 2
     |
     +-- ROS 2 hardware bridge
@@ -273,44 +228,24 @@ Raspberry Pi running ROS 2
                     +-- ESP32 sensor and lift controller
 ```
 
-The hardware implementation will be added incrementally:
+Planned steps:
 
-1. Measure the physical rover and replace placeholder dimensions, masses,
-   steering limits, sensor positions, and covariances in the model and
-   configuration files.
-2. Write Arduino IDE firmware for the ESP32 boards, including motor control,
-   steering control, sensor acquisition, lift limit-switch handling, and a
-   command-timeout watchdog that stops the rover if communication is lost.
-3. Implement the Raspberry Pi hardware bridge so ROS 2 publishes commands to
-   the ESP32 boards and receives wheel, IMU, GPS, ultrasonic, and lift-state
-   data.
-4. Replace simulated topics and Gazebo bridges with real sensor drivers while
-   preserving the ROS 2 interfaces used by localization and Nav2.
-5. Test localization and navigation at low speed, tune covariances and
-   turning-radius limits with recorded field data, and add physical emergency
-   stop behavior.
-6. Add boundary roaming, stuck recovery, and field-test procedures once basic
-   point-to-point navigation is reliable.
+1. Measure the physical rover and replace placeholder dimensions, masses, steering limits, sensor positions, and covariances.
+2. Write Arduino IDE firmware for both ESP32 boards, including motor and steering control, sensor acquisition, lift limit-switch handling, and a command-timeout watchdog.
+3. Implement the Raspberry Pi bridge between ROS 2 topics and the ESP32 boards.
+4. Replace simulated topics and Gazebo bridges with real sensor drivers while keeping the ROS 2 interfaces used by localization and Nav2.
+5. Add stuck detection and recovery.
+6. Test at low speed, tune covariances and turning-radius limits with recorded field data, and add physical emergency-stop behavior.
 
-The real rover is expected to use a Raspberry Pi, two ESP32 boards, an RPLIDAR
-S2, GPS, IMU, and ultrasonic sensors. Exact sensor models and several physical
-measurements are still open questions; `NOTES.md` records which values are
-measured and which remain provisional.
+The real rover is expected to use a Raspberry Pi 5, two ESP32 boards, an RPLIDAR S2, GPS, IMU, and ultrasonic sensors. Exact sensor models and several measurements are still open.
 
-## Development notes
+## Project documentation
 
-`NOTES.md` contains the project's detailed engineering record, including:
+- `NOTES.md`: current state, how to run things, gotchas, and placeholder values.
+- `DEVLOG.md`: full engineering record with every step, test result, and decision.
 
-- Frame conventions and measured dimensions
-- Known ROS, Gazebo, and RViz environment issues
-- Simulation milestones and tags
-- Navigation tuning notes
-- Open hardware and field-testing questions
-
-The repository's `main` branch is intended to remain usable. Work is organized
-on descriptive branches, and completed milestones are tagged.
+The `main` branch is intended to remain usable. Work is organized on descriptive branches, and completed milestones are tagged.
 
 ## License
 
-The ROS packages include Apache-2.0 license files. See the individual package
-directories for the applicable license text.
+The ROS packages include Apache-2.0 license files. See the individual package directories for the license text.
