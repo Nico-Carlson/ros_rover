@@ -173,6 +173,8 @@ class RoamNode(Node):
         self.busy = False
         self.patrolling = False
         self.goal_handle = None
+        self.goal_start = None
+        self.declare_parameter("goal_timeout", 90.0)
         self.create_service(Trigger, "start_patrol", self.on_start_patrol)
         self.create_service(Trigger, "stop_patrol", self.on_stop_patrol)
         self.create_subscription(Empty, "boundary_closed", self.on_boundary_closed, 10)
@@ -235,6 +237,7 @@ class RoamNode(Node):
             if not self.patrolling:
                 return
         if self.busy:
+            self.check_watchdog()
             return
         if not self.client.server_is_ready():
             self.get_logger().info("Waiting for Nav2...")
@@ -262,6 +265,7 @@ class RoamNode(Node):
         self.get_logger().info(f"Sending goal ({goal[0]:.1f}, {goal[1]:.1f})")
         self.goal_future = self.client.send_goal_async(msg)
         self.goal_future.add_done_callback(self.on_goal_response)
+        self.goal_start = self.get_clock().now()
         return True
 
     def on_goal_response(self, future):
@@ -302,6 +306,15 @@ class RoamNode(Node):
         response.success = True
         response.message = "Patrol stopped"
         return response
+
+    def check_watchdog(self):
+        if self.goal_start is None or self.goal_handle is None:
+            return
+        elapsed = (self.get_clock().now() - self.goal_start).nanoseconds / 1e9
+        if elapsed > self.get_parameter("goal_timeout").value:
+            self.get_logger().warn(f"Goal timed out after {elapsed:.0f} s, cancelling")
+            self.goal_handle.cancel_goal_async()
+            self.goal_start = None
 
     def on_result(self, future):
         status = future.result().status
