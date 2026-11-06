@@ -109,7 +109,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Say when something is a guess or can't be verified. Don't state it as fact.
 - After merging any branch make a tag before deleting any branches.
 - Don't over-verify: I asked not to double check everything. Check only things that can actually break something.
-- Keep this file current: as progress is made, record relevant context and
+- keep DEVLOG.md current: as progress is made, record relevant context and
   instructions here. It is the project's "second brain" so a new model or a new
   maintainer never has to rebuild context from scratch.
 
@@ -606,7 +606,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
    `minimum_turning_radius`, behavior when `/scan_filtered` goes silent, and Pi CPU check (MPPI, Smac's ~29 s
    configure).
 3. Stuck detector and recovery, panel patrol state, then the ESP32 firmware and Pi bridge.
-- New chat: paste this file first, plus the file being edited.
+- New chat: paste DEVLOG.md first, plus the file being edited.
 
 ## Ideas for later (not committed to)
 - SLAM works in the sim. Open question: how it coexists with the GPS EKF (both want `map -> odom`), and
