@@ -173,7 +173,7 @@ class ControlPanel(QWidget):
                 "inflation_layer.inflation_radius",
                 "Local inflation (m)",
                 0.2,
-                2.5,
+                3.5,
                 0.1,
                 1.5,
             )
@@ -185,7 +185,7 @@ class ControlPanel(QWidget):
                 "inflation_layer.inflation_radius",
                 "Global inflation (m)",
                 0.2,
-                2.5,
+                3.5,
                 0.1,
                 1.5,
             )
@@ -196,9 +196,9 @@ class ControlPanel(QWidget):
                 "local_costmap/local_costmap",
                 "inflation_layer.cost_scaling_factor",
                 "Local cost falloff",
-                0.5,
+                0.1,
                 10.0,
-                0.5,
+                0.1,
                 1.0,
             )
         )
@@ -208,9 +208,9 @@ class ControlPanel(QWidget):
                 "global_costmap/global_costmap",
                 "inflation_layer.cost_scaling_factor",
                 "Global cost falloff",
-                0.5,
+                0.1,
                 10.0,
-                0.5,
+                0.1,
                 1.0,
             )
         )
