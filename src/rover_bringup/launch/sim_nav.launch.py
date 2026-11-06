@@ -30,6 +30,19 @@ def generate_launch_description():
         output="screen",
     )
 
+    boundary_canvas = Node(
+        package="rover_bringup",
+        executable="boundary_canvas.py",
+        parameters=[{"use_sim_time": True}],
+        output="screen",
+    )
+    roam = Node(
+        package="rover_bringup",
+        executable="roam.py",
+        parameters=[{"use_sim_time": True}],
+        output="screen",
+    )
+
     return LaunchDescription(
         [
             sim,
@@ -37,5 +50,7 @@ def generate_launch_description():
             TimerAction(period=15.0, actions=[ekf]),
             TimerAction(period=22.0, actions=[nav2]),
             TimerAction(period=25.0, actions=[rviz]),
+            TimerAction(period=26.0, actions=[boundary_canvas]),
+            TimerAction(period=30.0, actions=[roam]),
         ]
     )

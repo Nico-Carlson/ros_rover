@@ -27,7 +27,7 @@ install(DIRECTORY config launch
   DESTINATION share/${PROJECT_NAME}
 )
 
-install(PROGRAMS scripts/gps_covariance.py scripts/odom_covariance.py scripts/scan_gate.py scripts/sim_lift_signal.py
+install(PROGRAMS scripts/gps_covariance.py scripts/odom_covariance.py scripts/scan_gate.py scripts/sim_lift_signal.py scripts/boundary_canvas.py scripts/roam.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
