@@ -43,6 +43,12 @@ def generate_launch_description():
         output="screen",
     )
 
+    control_panel = Node(
+        package="rover_bringup",
+        executable="control_panel.py",
+        output="screen",
+    )
+
     return LaunchDescription(
         [
             sim,
@@ -52,5 +58,6 @@ def generate_launch_description():
             TimerAction(period=25.0, actions=[rviz]),
             TimerAction(period=26.0, actions=[boundary_canvas]),
             TimerAction(period=30.0, actions=[roam]),
+            TimerAction(period=30.0, actions=[control_panel]),
         ]
     )
