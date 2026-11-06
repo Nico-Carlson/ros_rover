@@ -22,7 +22,9 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 ## Quick start (sim)
 1. `ros2 launch rover_bringup sim_nav.launch.py` starts the sim, rf2o + scan gate, both EKFs, Nav2 and RViz in
    order, on timers (10, 15, 22 and 25 s after launch). The delays are guesses: if Nav2 times out waiting for
-   `odom`, raise its delay in the file. Nav2 takes ~30 s more to become active ("Managed nodes are active").
+   `odom`, raise its delay in the file. Nav2 takes ~30 s more to become active ("Managed nodes are active").    The same launch also starts `boundary_canvas.py` (26 s), `roam.py` (30 s) and the control panel
+   `control_panel.py` (30 s), all guesses like the other delays. Use the panel for patrol and boundary
+   control; no extra terminals are needed.
 2. In RViz, send goals with "2D Goal Pose". Drive by hand only when Nav2 has no goal:
    `ros2 run teleop_twist_keyboard teleop_twist_keyboard` (avoid `j`/`l`; press `k` to stop).
 - Manual start order, if you need the terminals separately: `sim.launch.py`, `lidar_odom.launch.py`,
@@ -88,7 +90,9 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - [ ] Heading source for GPS fusion on real hardware (real IMU likely has no compass)
 - [x] Scan-gating node (lift down only)
 - [x] Nav2 in the sim (own launch, footprint, filtered scan; ultrasonic layer and real-hardware tuning still open)
-- [ ] Boundary roaming + stuck recovery (in progress: polygon editor and roam goal generator done; goals stall, see "Roaming and stuck recovery")
+- [ ] Boundary roaming + stuck recovery (roaming, control panel and goal watchdog done; stuck detector and
+      recovery NOT built, see "Roaming and stuck recovery")
+- [x] Control panel with parameter sliders (see "Control panel")
 - [ ] Replace placeholder measurements and sensor specs with real ones
 - [ ] ESP32 firmware (with watchdog) + Pi hardware bridge
 - [ ] Field testing
@@ -172,7 +176,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - `src/rover_bringup`: ament_cmake.
   - `config/`: `slam_mapping.yaml`, `ekf.yaml`, `nav2_params.yaml`
   - `launch/`: `slam`, `ekf`, `lidar_odom`, `nav2`, `sim_nav` (each `*.launch.py`)
-  - `scripts/`: `gps_covariance.py`, `odom_covariance.py`, `scan_gate.py`, `sim_lift_signal.py`
+  - `scripts/`: `gps_covariance.py`, `odom_covariance.py`, `scan_gate.py`, `sim_lift_signal.py` `boundary_canvas.py`, `roam.py` `control_panel.py`
     (all listed in `install(PROGRAMS ...)` in CMakeLists.txt, each needs `chmod +x`)
 - `src/rf2o_laser_odometry`: cloned separately, git-ignored, NOT in this repo (see "Hardware-matched EKF").
 - Measurements live as `xacro:property` values at the top of the xacro. Edit those,
@@ -525,6 +529,33 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
     spot (-9.7, 1.2) should be open ground if the origin is the spawn point (trees are at x 5 to 12).
   - To narrow it down: next stall, note what is near the rover in RViz, and check `/cmd_vel` while it sits
     still (`ros2 topic echo /cmd_vel --once`; this shows only the current command, not the past).
+- DONE: `boundary_canvas.py`, `roam.py` and `control_panel.py` are installed, `chmod +x`'d and launched from
+  `sim_nav.launch.py`. `boundary.yaml` is git-ignored (sim test data); `roam.py` starts without it and warns.
+  `yaw_goal_tolerance` 3.14 is committed but the heading hypothesis is still UNSUPPORTED by testing.
+
+## Control panel (done in the sim, branch roaming-and-recovery)
+- `scripts/control_panel.py` (PyQt5, confirmed installed; PySide6 is not). ROS runs inside Qt through a 50 ms
+  QTimer calling `rclpy.spin_once`.
+- Services (all `Trigger` unless noted): `roam.py` offers `/start_patrol` and `/stop_patrol` (stop also cancels
+  the running goal; start answers `success=False` if there is no boundary). `boundary_canvas.py` offers
+  `/clear_boundary` (Empty) and publishes `/boundary_closed` after saving; `roam.py` reloads the boundary on it
+  (grid and walker rebuilt, old goal marker cleared). New Boundary in the panel = stop patrol, then clear.
+- Mode toggle (Point to point / Boundary): only greys out the three buttons. It does NOT stop a running patrol.
+  Point to point uses RViz "2D Goal Pose".
+- Goal watchdog: `roam.py` parameter `goal_timeout` (90 s sim time, PLACEHOLDER) cancels an accepted goal that
+  runs too long; verified with a 10 s test. A goal that is never accepted is not covered.
+- Sliders (`ParamSlider`): set a DOUBLE parameter on any node through its `set_parameters` service when the
+  slider is released. Verified working: roam `goal_timeout`; controller_server `FollowPath.vx_max`, `wz_max`,
+  `general_goal_checker.yaw_goal_tolerance`, `xy_goal_tolerance`; local and global costmap
+  `inflation_layer.inflation_radius` and `cost_scaling_factor` (costmap halo responds). Names confirmed with
+  `ros2 param get`; the global costmap's names were not all individually checked.
+- `FollowPath.CostCritic.cost_weight` (3.81) exists but has no slider.
+- Sliders START at values hard-coded in the file, not read from the nodes, so they can disagree with the real
+  values. A parameter declared as an integer would be rejected (label shows "(rejected)").
+- Slider changes last only until relaunch: copy keepers into `nav2_params.yaml`.
+- Local vs global (my reading of Nav2, not tested here): global = planner routes and "Start occupied" failures;
+  local = how the controller passes obstacles and "Failed to make progress". Keep local at or below global.
+- Not done: patrol state shown in the panel, reading real values at startup, tabs if it gets too tall.
 
 ## Open questions
 - Exact ultrasonic part (model number) is unknown, so their range/cone are still placeholders.
@@ -555,7 +586,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 4. Sim-only nodes (`sim_lift_signal.py`, `gps_covariance.py`) must be left out of the Pi launch, and
    `lidar_odom.launch.py` has no argument for that yet.
 
-## Live tuning sliders (idea, not started)
+## Live tuning sliders (done for Roam and Nav2, see “Control pane)
 - Goal: a small tool with sliders to change values while the sim or rover runs (goal tolerances, speed limits,
   danger zones) with no rebuild or relaunch.
 - Likely approach: `rqt_reconfigure` for ROS 2 parameters (sliders for numbers). Open question: which of our
@@ -574,8 +605,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 2. Nav2 leftovers: ultrasonic range obstacle layer (LIDAR is blind below ~0.57 m), real max steer angle for
    `minimum_turning_radius`, behavior when `/scan_filtered` goes silent, and Pi CPU check (MPPI, Smac's ~29 s
    configure).
-3. Boundary roaming + stuck recovery, then the ESP32 firmware (with a command-timeout watchdog) and the
-   Pi hardware bridge.
+3. Stuck detector and recovery, panel patrol state, then the ESP32 firmware and Pi bridge.
 - New chat: paste this file first, plus the file being edited.
 
 ## Ideas for later (not committed to)
