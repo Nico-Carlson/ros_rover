@@ -11,3 +11,4 @@ __pycache__/
 *.swp
 
 src/rf2o_laser_odometry/
+src/rover_bringup/config/boundary.yaml
