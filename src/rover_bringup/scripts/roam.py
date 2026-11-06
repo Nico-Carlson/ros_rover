@@ -160,10 +160,11 @@ class RoamNode(Node):
             "boundary_file",
             os.path.expanduser("~/rover_ws/src/rover_bringup/config/boundary.yaml"),
         )
-        polygon = load_boundary(self.get_parameter("boundary_file").value)
-        self.grid = VisitGrid(polygon)
-        self.walker = Walker(polygon, self.grid)
-        self.polygon = polygon
+        self.polygon = []
+        self.grid = None
+        self.walker = None
+        self.goal_xy = None
+        self.load_boundary_file()
         self.goal_xy = None
         self.marker_pub = self.create_publisher(Marker, "roam_markers", 10)
         self.tf_buffer = Buffer()
@@ -188,6 +189,8 @@ class RoamNode(Node):
         return t.transform.translation.x, t.transform.translation.y
 
     def publish_markers(self):
+        if not self.polygon:
+            return
         line = Marker()
         line.header.frame_id = "map"
         line.ns = "roam_boundary"
@@ -222,6 +225,10 @@ class RoamNode(Node):
 
     def try_start(self):
         self.publish_markers()
+        if not self.polygon:
+            response.success = False
+            response.message = "No boundary yet"
+            return response
         pose = self.get_pose()
         if pose is not None:
             self.grid.mark(*pose)
@@ -268,13 +275,19 @@ class RoamNode(Node):
         self.result_future = handle.get_result_async()
         self.result_future.add_done_callback(self.on_result)
 
-    def on_boundary_closed(self, msg):
+    def load_boundary_file(self):
         path = self.get_parameter("boundary_file").value
+        if not os.path.exists(path):
+            self.get_logger().warn("No boundary file yet, draw one in RViz")
+            return
         self.polygon = load_boundary(path)
         self.grid = VisitGrid(self.polygon)
         self.walker = Walker(self.polygon, self.grid)
         self.goal_xy = None
-        self.get_logger().info(f"Loaded new boundary with {len(self.polygon)} corners")
+        self.get_logger().info(f"Loaded boundary with {len(self.polygon)} corners")
+
+    def on_boundary_closed(self, msg):
+        self.load_boundary_file()
 
     def on_start_patrol(self, request, response):
         self.patrolling = True
