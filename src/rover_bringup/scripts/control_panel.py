@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 import sys
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QGroupBox, QSlider
+from rcl_interfaces.msg import Parameter as ParamMsg
+from rcl_interfaces.msg import ParameterType, ParameterValue
+from rcl_interfaces.srv import SetParameters
 import rclpy
 from std_srvs.srv import Empty, Trigger
 from rclpy.node import Node
@@ -15,6 +20,48 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+
+class ParamSlider(QWidget):
+    def __init__(self, node, target, name, title, low, high, step, initial):
+        super().__init__()
+        self.name = name
+        self.title = title
+        self.step = step
+        self.client = node.create_client(SetParameters, f"/{target}/set_parameters")
+        self.label = QLabel()
+        self.slider = QSlider(Qt.Horizontal)
+        self.slider.setRange(round(low / step), round(high / step))
+        self.slider.setValue(round(initial / step))
+        self.slider.valueChanged.connect(self.on_changed)
+        self.slider.sliderReleased.connect(self.send)
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.label)
+        layout.addWidget(self.slider)
+        self.setLayout(layout)
+        self.on_changed()
+
+    def value(self):
+        return self.slider.value() * self.step
+
+    def on_changed(self):
+        self.label.setText(f"{self.title}: {self.value():g}")
+        if not self.slider.isSliderDown():
+            self.send()
+
+    def send(self):
+        if not self.client.service_is_ready():
+            self.label.setText(f"{self.title}: {self.value():g} (node not running)")
+            return
+        p = ParamMsg()
+        p.name = self.name
+        p.value = ParameterValue(
+            type=ParameterType.PARAMETER_DOUBLE, double_value=float(self.value())
+        )
+        req = SetParameters.Request()
+        req.parameters = [p]
+        self.client.call_async(req)
 
 
 class ControlPanel(QWidget):
@@ -55,6 +102,15 @@ class ControlPanel(QWidget):
         layout.addWidget(self.new_button)
         layout.addWidget(self.start_button)
         layout.addWidget(self.stop_button)
+        roam_box = QGroupBox("Roam")
+        roam_layout = QVBoxLayout()
+        roam_layout.addWidget(
+            ParamSlider(
+                node, "roam", "goal_timeout", "Goal timeout (s)", 10, 300, 5, 90
+            )
+        )
+        roam_box.setLayout(roam_layout)
+        layout.addWidget(roam_box)
         layout.addWidget(self.status)
         self.setLayout(layout)
 
