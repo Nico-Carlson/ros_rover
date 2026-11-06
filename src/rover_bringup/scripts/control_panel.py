@@ -61,7 +61,13 @@ class ParamSlider(QWidget):
         )
         req = SetParameters.Request()
         req.parameters = [p]
-        self.client.call_async(req)
+        future = self.client.call_async(req)
+        future.add_done_callback(self.on_reply)
+
+    def on_reply(self, future):
+        result = future.result().results[0]
+        if not result.successful:
+            self.label.setText(f"{self.title}: {self.value():g} (rejected)")
 
 
 class ControlPanel(QWidget):
@@ -110,6 +116,107 @@ class ControlPanel(QWidget):
             )
         )
         roam_box.setLayout(roam_layout)
+        nav_box = QGroupBox("Nav2")
+        nav_layout = QVBoxLayout()
+        nav_layout.addWidget(
+            ParamSlider(
+                node,
+                "controller_server",
+                "FollowPath.vx_max",
+                "Max speed (m/s)",
+                0.1,
+                1.0,
+                0.05,
+                0.65,
+            )
+        )
+        nav_layout.addWidget(
+            ParamSlider(
+                node,
+                "controller_server",
+                "FollowPath.wz_max",
+                "Max turn rate (rad/s)",
+                0.2,
+                2.0,
+                0.1,
+                1.0,
+            )
+        )
+        nav_layout.addWidget(
+            ParamSlider(
+                node,
+                "controller_server",
+                "general_goal_checker.yaw_goal_tolerance",
+                "Yaw tolerance (rad)",
+                0.1,
+                3.14,
+                0.1,
+                3.14,
+            )
+        )
+        nav_layout.addWidget(
+            ParamSlider(
+                node,
+                "controller_server",
+                "general_goal_checker.xy_goal_tolerance",
+                "XY tolerance (m)",
+                0.1,
+                2.0,
+                0.1,
+                0.5,
+            )
+        )
+        nav_layout.addWidget(
+            ParamSlider(
+                node,
+                "local_costmap/local_costmap",
+                "inflation_layer.inflation_radius",
+                "Local inflation (m)",
+                0.2,
+                2.5,
+                0.1,
+                1.5,
+            )
+        )
+        nav_layout.addWidget(
+            ParamSlider(
+                node,
+                "global_costmap/global_costmap",
+                "inflation_layer.inflation_radius",
+                "Global inflation (m)",
+                0.2,
+                2.5,
+                0.1,
+                1.5,
+            )
+        )
+        nav_layout.addWidget(
+            ParamSlider(
+                node,
+                "local_costmap/local_costmap",
+                "inflation_layer.cost_scaling_factor",
+                "Local cost falloff",
+                0.5,
+                10.0,
+                0.5,
+                1.0,
+            )
+        )
+        nav_layout.addWidget(
+            ParamSlider(
+                node,
+                "global_costmap/global_costmap",
+                "inflation_layer.cost_scaling_factor",
+                "Global cost falloff",
+                0.5,
+                10.0,
+                0.5,
+                1.0,
+            )
+        )
+
+        nav_box.setLayout(nav_layout)
+        layout.addWidget(nav_box)
         layout.addWidget(roam_box)
         layout.addWidget(self.status)
         self.setLayout(layout)
