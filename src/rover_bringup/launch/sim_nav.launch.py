@@ -49,10 +49,17 @@ def generate_launch_description():
         output="screen",
     )
 
+    us_to_range = Node(
+        package="rover_bringup",
+        executable="us_to_range.py",
+        output="screen",
+    )
+
     return LaunchDescription(
         [
             sim,
             TimerAction(period=10.0, actions=[lidar_odom]),
+            TimerAction(period=10.0, actions=[us_to_range]),
             TimerAction(period=15.0, actions=[ekf]),
             TimerAction(period=22.0, actions=[nav2]),
             TimerAction(period=25.0, actions=[rviz]),
