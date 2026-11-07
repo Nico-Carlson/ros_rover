@@ -24,11 +24,11 @@ Done in the sim:
 - Dual EKF: odom filter (IMU + rf2o) and map filter (adds noisy GPS via navsat_transform)
 - rf2o LIDAR odometry, scan gating (lift down only), Nav2 (Smac Hybrid + MPPI, rolling costmaps)
 - Boundary drawing, roaming, goal watchdog, control panel with parameter sliders
+- Ultrasonic range layer for Nav2 (LIDAR is blind below ~0.57 m)
 
 Open:
 - Stuck detector + recovery (NOT built; the branch is not merged until it is)
 - Patrol state shown in the panel; sliders reading real values at startup
-- Ultrasonic range layer for Nav2 (LIDAR is blind below ~0.57 m)
 - Behavior when `/scan_filtered` goes silent (Nav2 would look like "no obstacles")
 - Real heading source for GPS fusion on hardware (the sim IMU is a perfect compass)
 - Realistic sim IMU noise; tune covariances against real data

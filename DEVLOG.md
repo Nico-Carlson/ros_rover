@@ -557,6 +557,23 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   local = how the controller passes obstacles and "Failed to make progress". Keep local at or below global.
 - Not done: patrol state shown in the panel, reading real values at startup, tabs if it gets too tall.
 
+## Ultrasonics in Nav2 (done in the sim, branch roaming-and-recovery)
+- The ultrasonics were publishing but unused. `scripts/us_to_range.py` (SIM ONLY, launched by `sim_nav` at 10 s)
+  converts each 5-ray `/us/<name>` LaserScan into one `sensor_msgs/Range` on `/us_range/<name>` (nearest valid
+  ray; `inf` when nothing is in range; field of view 0.262). The real ESP32 firmware will publish Range
+  directly, so drop this node on hardware and keep the costmap config.
+- Verified: `/us_range/front_mid` read 1.388 m toward `stump_1`, matching the earlier hand-calculated 1.39 to 1.40 m.
+- Layout changed: front and rear center sensors plus four corner sensors at 45 deg outward
+  (`us_side_y` 0.28, `us_angle` pi/4 in `rover.urdf.xacro`; positions still PLACEHOLDERS). Checked with
+  `tf2_echo base_link us_front_left`: (0.912, 0.280, 0.235), yaw 45 deg. Gaps remain on the sides between corners.
+- `nav2_params.yaml`: `range_layer` (`nav2_costmap_2d::RangeSensorLayer`, the six `/us_range/*` topics) added to
+  BOTH costmaps, between `obstacle_layer` and `inflation_layer` (inflation must stay last). Parameters
+  (`phi` 1.2, thresholds 0.2/0.8, `clear_on_max_reading` true) are from memory, not tuned. Verified by eye:
+  the stump (invisible to the LIDAR) now shows in the local and global costmaps.
+- Limit: the sensors see ~4 m, so the global costmap learns about short obstacles only near the rover.
+- Gotcha: if `us_to_range.py` is not running, short obstacles silently disappear. Rebuilding
+  `rover_description` also reinstalls `rover.rviz` from `src`, so an RViz display added live and never saved is lost.
+
 ## Open questions
 - Exact ultrasonic part (model number) is unknown, so their range/cone are still placeholders.
 - Which RPLIDAR S2 variant (30 m or 18 m) is on the rover; check the label.
