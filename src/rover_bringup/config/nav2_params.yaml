@@ -210,7 +210,7 @@ global_costmap:
       height: 50
 
       # OUTDOOR SETTINGS: Remove the static_layer from the plugins list
-      plugins: ["obstacle_layer", "inflation_layer"]
+      plugins: ["obstacle_layer", "range_layer", "inflation_layer"]
 
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
@@ -228,6 +228,22 @@ global_costmap:
           obstacle_max_range: 9.5
           obstacle_min_range: 0.75
           inf_is_valid: true
+
+      range_layer:
+        plugin: "nav2_costmap_2d::RangeSensorLayer"
+        enabled: True
+        topics:
+          - /us_range/front_left
+          - /us_range/front_mid
+          - /us_range/front_right
+          - /us_range/rear_left
+          - /us_range/rear_mid
+          - /us_range/rear_right
+        phi: 1.2
+        clear_threshold: 0.2
+        mark_threshold: 0.8
+        clear_on_max_reading: true
+        no_readings_timeout: 0.0
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
