@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import rclpy
 from std_msgs.msg import Empty
+from std_msgs.msg import Empty, String
 from std_srvs.srv import Trigger
 from geometry_msgs.msg import Point, PoseStamped
 from visualization_msgs.msg import Marker
@@ -164,6 +165,9 @@ class RoamNode(Node):
         self.grid = None
         self.walker = None
         self.goal_xy = None
+        self.goals_ok = 0
+        self.goals_failed = 0
+        self.goals_canceled = 0
         self.load_boundary_file()
         self.goal_xy = None
         self.marker_pub = self.create_publisher(Marker, "roam_markers", 10)
@@ -178,6 +182,7 @@ class RoamNode(Node):
         self.create_service(Trigger, "start_patrol", self.on_start_patrol)
         self.create_service(Trigger, "stop_patrol", self.on_stop_patrol)
         self.create_subscription(Empty, "boundary_closed", self.on_boundary_closed, 10)
+        self.status_pub = self.create_publisher(String, "patrol_status", 10)
         self.create_timer(1.0, self.try_start)
 
     def get_pose(self):
@@ -227,15 +232,14 @@ class RoamNode(Node):
 
     def try_start(self):
         self.publish_markers()
+        self.publish_status()
         if not self.polygon:
-            response.success = False
-            response.message = "No boundary yet"
-            return response
+            return
         pose = self.get_pose()
         if pose is not None:
             self.grid.mark(*pose)
-            if not self.patrolling:
-                return
+        if not self.patrolling:
+            return
         if self.busy:
             self.check_watchdog()
             return
@@ -288,12 +292,37 @@ class RoamNode(Node):
         self.grid = VisitGrid(self.polygon)
         self.walker = Walker(self.polygon, self.grid)
         self.goal_xy = None
+        self.goals_ok = 0
+        self.goals_failed = 0
+        self.goals_canceled = 0
         self.get_logger().info(f"Loaded boundary with {len(self.polygon)} corners")
+
+    def publish_status(self):
+        if not self.polygon:
+            state = "No boundary"
+        elif not self.patrolling:
+            state = "Stopped"
+        elif self.busy:
+            state = "Patrolling"
+        else:
+            state = "Patrolling (waiting for a goal)"
+        unvisited = (
+            sum(1 for c in self.grid.counts.values() if c == 0) if self.grid else 0
+        )
+        text = (
+            f"{state} | goals ok {self.goals_ok}, failed {self.goals_failed}, "
+            f"canceled {self.goals_canceled} | unvisited cells {unvisited}"
+        )
+        self.status_pub.publish(String(data=text))
 
     def on_boundary_closed(self, msg):
         self.load_boundary_file()
 
     def on_start_patrol(self, request, response):
+        if not self.polygon:
+            response.success = False
+            response.message = "No boundary yet"
+            return response
         self.patrolling = True
         response.success = True
         response.message = "Patrol started"
@@ -318,6 +347,12 @@ class RoamNode(Node):
 
     def on_result(self, future):
         status = future.result().status
+        if status == 4:
+            self.goals_ok += 1
+        elif status == 5:
+            self.goals_canceled += 1
+        else:
+            self.goals_failed += 1
         unvisited = sum(1 for c in self.grid.counts.values() if c == 0)
         self.get_logger().info(
             f"Goal finished with status {status}, {unvisited} cells unvisited"
