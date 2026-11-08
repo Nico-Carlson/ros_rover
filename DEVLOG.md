@@ -751,6 +751,25 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   helpers; the Pi still has to treat "both limits pressed" as a fault (done in `LiftState`).
 - NEXT: finish `IMU`, `GPS`, `DANGER` in the spec; the ESP32 master sketch using the C++ code (CMD in, MODE out,
   command-timeout watchdog); a ROS node wrapping `Bridge`.
+- Branch state (2026-11-08): `serial-protocol` has NOT been merged to main or tagged. When you are happy with it:
+  `git checkout main && git merge --no-ff serial-protocol && git tag serial-protocol-v1`. Check `git status` first:
+  the last few commits (the silent-ESP test in `test_bridge.py`, `.gitignore`) were never confirmed in the log.
+- Decisions made this session: booleans on the wire are `1`/`0`; field order is part of the spec; speed/lift
+  formatted with 2 decimals and steering with 1 (`make_cmd`); both languages must pass `vectors.txt`.
+- Spec gaps still open: `DANGER` (Pi -> ESP), `IMU` and `GPS` messages are in the old plan table but have no
+  exact fields in `SPEC.md`. Raw IMU axes/units and GPS fix-age fields need deciding (see the IMU and GPS
+  findings in "Old micro-ROS firmware review": send only NEW GPS fixes, send HDOP/fix quality, stamp on the Pi).
+- C++ gap: the ESP side has the checksum, line checker and reader, but NO message builder yet (no C++
+  equivalent of `make_line`/`make_lift`), and no field parser (`CMD` fields to numbers). Both are needed before
+  the sketch, and both should be added to `vectors.txt`-style tests.
+- Pi UART options and pin choices are still PLACEHOLDER (see the Firmware approach decisions). Nothing here has
+  touched real hardware.
+- The ROS node wrapping `Bridge` should: publish `/lift_down` from `LiftState` on a 10 Hz timer (not per
+  message), publish `/imu` and `/gps/fix` with stamps and covariances, subscribe `/cmd_vel` and convert
+  Twist to a steering ANGLE (delta = atan(wheelbase * wz / v), not `wz * 180/pi`), and send `CMD` at a steady
+  rate so the ESP command-timeout watchdog stays satisfied.
+- Test habit: run `python3 -m pytest -q` only from inside `protocol/`; running it from `~/rover_ws` pulls in
+  the failing `rover_basics` flake8 lint (976 style errors, unrelated, ignorable).
 
 ### Firmware files
 - `SenserBoardRedone.ino` + `MasterBoardRedone.ino` (each with a `globals.h`): pre-ROS firmware, drove well manually.
