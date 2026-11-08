@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <math.h>
 #include <string.h>
 #include "protocol.h"
 
@@ -44,6 +45,46 @@ static void check_make_lift(bool down, bool up, const char* expected) {
         printf("PASS  make_lift %d,%d\n", down, up);
     } else {
         printf("FAIL  make_lift %d,%d -> \"%s\" (expected \"%s\")\n", down, up, out, expected);
+        failures++;
+    }
+}
+
+static void check_make_bat(float volts, const char* expected) {
+    char out[PROTOCOL_MAX_LINE + 1];
+    protocol_make_bat(volts, out, sizeof(out));
+    if (strcmp(out, expected) == 0) {
+        printf("PASS  make_bat %.2f\n", volts);
+    } else {
+        printf("FAIL  make_bat %.2f -> \"%s\" (expected \"%s\")\n", volts, out, expected);
+        failures++;
+    }
+}
+
+static void check_make_mode(bool a, bool d, bool w, bool b, const char* expected) {
+    char out[PROTOCOL_MAX_LINE + 1];
+    protocol_make_mode(a, d, w, b, out, sizeof(out));
+    if (strcmp(out, expected) == 0) {
+        printf("PASS  make_mode %d,%d,%d,%d\n", a, d, w, b);
+    } else {
+        printf("FAIL  make_mode %d,%d,%d,%d -> \"%s\" (expected \"%s\")\n", a, d, w, b, out, expected);
+        failures++;
+    }
+}
+
+static void check_parse_cmd(const char* body, bool expect_ok,
+                            float s, float t, float l) {
+    float rs = 99, rt = 99, rl = 99;   // 99 = "untouched" marker
+    bool ok = protocol_parse_cmd(body, &rs, &rt, &rl);
+    bool pass;
+    if (expect_ok) {
+        pass = ok && fabsf(rs - s) < 1e-4f && fabsf(rt - t) < 1e-4f && fabsf(rl - l) < 1e-4f;
+    } else {
+        pass = !ok && rs == 99 && rt == 99 && rl == 99;
+    }
+    if (pass) {
+        printf("PASS  parse_cmd \"%s\" -> %s\n", body, ok ? "ok" : "rejected");
+    } else {
+        printf("FAIL  parse_cmd \"%s\" -> %s (%.2f, %.2f, %.2f)\n", body, ok ? "ok" : "rejected", rs, rt, rl);
         failures++;
     }
 }
@@ -138,6 +179,23 @@ int main() {
     check_make_lift(true, false, "LIFT,1,0*16\n");
     check_make_lift(false, false, "LIFT,0,0*17\n");
     check_make_lift(false, true, "LIFT,0,1*16\n");
+
+    check_make_bat(12.4f, "BAT,12.4*62\n");
+    check_make_bat(12.46f, "BAT,12.5*63\n");
+    check_make_bat(0.0f, "BAT,0.0*55\n");
+
+    check_make_mode(true, false, false, false, "MODE,1,0,0,0*02\n");
+    check_make_mode(false, false, false, true, "MODE,0,0,0,1*02\n");
+    check_make_mode(false, true, true, false, "MODE,0,1,1,0*03\n");
+
+    check_parse_cmd("CMD,0.30,12.5,0.00", true, 0.30f, 12.5f, 0.0f);
+    check_parse_cmd("CMD,-0.45,-30.0,0.00", true, -0.45f, -30.0f, 0.0f);
+    check_parse_cmd("CMD,0.3,12.5", false, 0, 0, 0);           // missing field
+    check_parse_cmd("CMD,0.3,12.5,0.0,9", false, 0, 0, 0);     // extra field
+    check_parse_cmd("CMD,abc,1,2", false, 0, 0, 0);            // not a number
+    check_parse_cmd("CMD,0.3,12.5,0.0x", false, 0, 0, 0);      // junk after the number
+    check_parse_cmd("CMD,nan,1,2", false, 0, 0, 0);            // nan rejected
+    check_parse_cmd("BAT,12.4", false, 0, 0, 0);               // wrong type
 
     LineReader r;
     line_reader_init(&r);

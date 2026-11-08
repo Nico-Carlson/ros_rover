@@ -22,6 +22,15 @@ size_t protocol_make_line(const char* body, char* out, size_t out_size);
 // Builds "LIFT,down,up*CS\n" into out. Same return rules as protocol_make_line.
 size_t protocol_make_lift(bool down, bool up, char* out, size_t out_size);
 
+size_t protocol_make_bat(float volts, char* out, size_t out_size);
+size_t protocol_make_mode(bool autonomous, bool danger, bool warning, bool brake,
+                          char* out, size_t out_size);
+
+// Parses a CMD body (checksum already removed), e.g. "CMD,0.30,12.5,0.00".
+// Returns true and fills the three outputs only if the body is exactly
+// CMD plus three finite numbers. Otherwise returns false and leaves them alone.
+bool protocol_parse_cmd(const char* body, float* speed, float* steer, float* lift);
+
 #define PROTOCOL_MAX_LINE 100
 
 struct LineReader {

@@ -1,5 +1,7 @@
 #include "protocol.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
 #include <string.h>
 
 uint8_t protocol_checksum(const char* body, size_t len) {
@@ -82,4 +84,40 @@ size_t protocol_make_lift(bool down, bool up, char* out, size_t out_size) {
     char body[16];
     snprintf(body, sizeof(body), "LIFT,%d,%d", down ? 1 : 0, up ? 1 : 0);
     return protocol_make_line(body, out, out_size);
+}
+
+size_t protocol_make_bat(float volts, char* out, size_t out_size) {
+    char body[24];
+    snprintf(body, sizeof(body), "BAT,%.1f", volts);
+    return protocol_make_line(body, out, out_size);
+}
+
+size_t protocol_make_mode(bool autonomous, bool danger, bool warning, bool brake,
+                          char* out, size_t out_size) {
+    char body[24];
+    snprintf(body, sizeof(body), "MODE,%d,%d,%d,%d",
+             autonomous ? 1 : 0, danger ? 1 : 0, warning ? 1 : 0, brake ? 1 : 0);
+    return protocol_make_line(body, out, out_size);
+}
+
+bool protocol_parse_cmd(const char* body, float* speed, float* steer, float* lift) {
+    if (strncmp(body, "CMD,", 4) != 0) return false;
+    const char* p = body + 4;
+    char* end;
+    float v[3];
+    for (int i = 0; i < 3; i++) {
+        v[i] = strtof(p, &end);
+        if (end == p) return false;            // no number found
+        if (!isfinite(v[i])) return false;     // reject nan and inf
+        if (i < 2) {
+            if (*end != ',') return false;     // a comma must follow the first two
+            p = end + 1;
+        } else if (*end != '\0') {
+            return false;                      // nothing may follow the third
+        }
+    }
+    *speed = v[0];
+    *steer = v[1];
+    *lift = v[2];
+    return true;
 }
