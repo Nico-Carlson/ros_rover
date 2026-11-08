@@ -26,6 +26,28 @@ static void check_line(const char* line, bool expect_ok, size_t expect_len) {
     }
 }
 
+static void check_make_line(const char* body, const char* expected) {
+    char out[PROTOCOL_MAX_LINE + 1];
+    size_t n = protocol_make_line(body, out, sizeof(out));
+    if (n == strlen(expected) && strcmp(out, expected) == 0) {
+        printf("PASS  make_line %s\n", body);
+    } else {
+        printf("FAIL  make_line %s -> \"%s\" (expected \"%s\")\n", body, out, expected);
+        failures++;
+    }
+}
+
+static void check_make_lift(bool down, bool up, const char* expected) {
+    char out[PROTOCOL_MAX_LINE + 1];
+    protocol_make_lift(down, up, out, sizeof(out));
+    if (strcmp(out, expected) == 0) {
+        printf("PASS  make_lift %d,%d\n", down, up);
+    } else {
+        printf("FAIL  make_lift %d,%d -> \"%s\" (expected \"%s\")\n", down, up, out, expected);
+        failures++;
+    }
+}
+
 // Feeds every char of s. Returns how many valid lines arrived; last_body gets the latest body.
 static int feed_all(LineReader* r, const char* s, char* last_body) {
     int count = 0;
@@ -110,6 +132,12 @@ int main() {
     check_line("CMD,0.3,12.5,0.0", false, 0);      // no checksum
     check_line("CMD,0.3,12.5,0.0*7", false, 0);    // checksum cut short
     check_line("CMD,0.3,12.5,0.0*7D1", false, 0);  // extra char after checksum
+
+    check_make_line("BAT,12.4", "BAT,12.4*62\n");
+    check_make_line("CMD,0.3,12.5,0.0", "CMD,0.3,12.5,0.0*7D\n");
+    check_make_lift(true, false, "LIFT,1,0*16\n");
+    check_make_lift(false, false, "LIFT,0,0*17\n");
+    check_make_lift(false, true, "LIFT,0,1*16\n");
 
     LineReader r;
     line_reader_init(&r);

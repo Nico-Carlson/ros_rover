@@ -14,6 +14,14 @@ void protocol_checksum_hex(const char* body, size_t len, char* out);
 // everything before it. On success, *body_len is set to the length of the body (before the '*').
 bool protocol_check_line(const char* line, size_t* body_len);
 
+// Builds "body*CS\n" into out (with a '\0' after the newline).
+// Returns the number of characters written (not counting the '\0'),
+// or 0 if it would not fit in out_size.
+size_t protocol_make_line(const char* body, char* out, size_t out_size);
+
+// Builds "LIFT,down,up*CS\n" into out. Same return rules as protocol_make_line.
+size_t protocol_make_lift(bool down, bool up, char* out, size_t out_size);
+
 #define PROTOCOL_MAX_LINE 100
 
 struct LineReader {
