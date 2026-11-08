@@ -24,11 +24,13 @@ Done in the sim:
 - Dual EKF: odom filter (IMU + rf2o) and map filter (adds noisy GPS via navsat_transform)
 - rf2o LIDAR odometry, scan gating (lift down only), Nav2 (Smac Hybrid + MPPI, rolling costmaps)
 - Boundary drawing, roaming, goal watchdog, control panel with parameter sliders
-- Ultrasonic range layer for Nav2 (LIDAR is blind below ~0.57 m)
+- Ultrasonic range layer in both Nav2 costmaps (sim converter `us_to_range`); LIDAR is blind below ~0.57 m
+- rf2o speed gate and 22 extra sim trees (localization no longer blows up); `/patrol_status` topic; canvas slab
+  shows only while drawing
 
 Open:
 - Stuck detector + recovery (NOT built; the branch is not merged until it is)
-- Patrol state shown in the panel; sliders reading real values at startup
+- Show `/patrol_status` on the control panel (next, small); sliders reading real values at startup
 - Behavior when `/scan_filtered` goes silent (Nav2 would look like "no obstacles")
 - Real heading source for GPS fusion on hardware (the sim IMU is a perfect compass)
 - Realistic sim IMU noise; tune covariances against real data
@@ -42,7 +44,7 @@ colcon build --packages-select rover_bringup     # after ANY edit; launch uses t
 ros2 launch rover_bringup sim_nav.launch.py
 ```
 One command starts: sim (0 s), us_to_range + rf2o + scan gate (10 s), EKFs (15 s), Nav2 (22 s), RViz (25 s), canvas (26 s), roam (30 s), panel (30 s). All delays are guesses. Nav2 needs ~30 s more
-to become active ("Managed nodes are active"). Gazebo runs server-only (no window): attach one with gz sim -g in another terminal.
+to become active ("Managed nodes are active"). Gazebo runs server-only (no window): attach one with `gz sim -g` in another terminal.
 
 - Point to point: RViz "2D Goal Pose".
 - Manual driving only when Nav2 has no goal: `ros2 run teleop_twist_keyboard teleop_twist_keyboard`
@@ -62,9 +64,12 @@ to become active ("Managed nodes are active"). Gazebo runs server-only (no windo
   use "Publish Point" for 3+ corners, click within 3 m of the first point to close. It saves
   `config/boundary.yaml` (git-ignored) and announces `/boundary_closed`; roam reloads it.
   Wait for roam to print `Loaded boundary with N corners`, then press Start Patrol.
+- The green canvas slab is hidden until you press New Boundary and disappears when the polygon closes, so press New
+  Boundary first even on a fresh start (Publish Point needs the slab to land on).
 - Roam starts without a boundary file (warns); Start Patrol answers "No boundary yet" until one exists.
 - Services: `/start_patrol`, `/stop_patrol` (Trigger, on `roam`), `/clear_boundary` (Empty, on
-  `boundary_canvas`). Topic: `/boundary_closed`. Markers: `/roam_markers` (boundary line, goal ball).
+  `boundary_canvas`). Topics: `/boundary_closed`, `/patrol_status` (String, 1 Hz: state, goals ok/failed/canceled,
+  unvisited cells; canceled covers Stop Patrol and the watchdog). Markers: `/roam_markers` (boundary line, goal ball).
 - Rover should be inside or near the polygon at start, or roam prints `No goal found inside the boundary`.
 - Goal watchdog: `roam` parameter `goal_timeout` (90 s sim time, placeholder) cancels a goal that runs too
   long. A goal that is never accepted is not covered.
@@ -82,6 +87,7 @@ to become active ("Managed nodes are active"). Gazebo runs server-only (no windo
 
 ## Known roaming problems
 - Latest run: 34 succeeded, 5 aborted, 4 'Failed to make progress'. Remaining aborts: cancels (watchdog), 'Start occupied' next to trees, occasional planner timeouts.
+- Gazebo server-only (`-s`) gained only ~2% in `/scan` rate; kept for convenience.
 - `Failed to make progress` mid-route: the behavior tree clears the local costmap and retries, usually
   recovering. Cause unknown (stale costmap obstacle is a guess).
 - `yaw_goal_tolerance` is 3.14 (committed). The heading hypothesis behind it is UNSUPPORTED by testing.
@@ -117,8 +123,14 @@ to become active ("Managed nodes are active"). Gazebo runs server-only (no windo
   listed twice, `controller_server.verbose not found`, one-time `Invalid frame ID "odom"` if Nav2 starts
   before the EKF, `/cmd_vel_teleop` in the topic list, rf2o `Waiting for laser_scans....`.
 - Sim runs slow (Gazebo real-time factor ~52 to 55%, `/scan` ~6.7 Hz). Not representative of the Pi.
-- rf2o publishes impossible speeds sometimes. odom_covariance.py drops them (max_speed 1.5, max_yaw_rate 2.0). Keep this gate on hardware too.
-- Rebuilding rover_description reinstalls rover.rviz from src: save RViz changes there first.
+- rf2o publishes impossible speeds sometimes (seen: 18 m/s). `odom_covariance.py` drops them (`max_speed` 1.5,
+  `max_yaw_rate` 2.0); keep this gate on hardware too. Without it the EKFs blow up (positions of hundreds of meters).
+- RViz config: `sim_nav` loads the INSTALLED `rover.rviz`. Save with File > Save Config As into
+  `~/rover_ws/src/rover_description/rviz/rover.rviz`, then rebuild `rover_description`; a plain Save Config is
+  overwritten by the next build (check with `diff` of the `src` and `install` copies).
+- If `us_to_range` is not running, short obstacles silently vanish from the costmaps.
+- `ros2 topic echo` truncates arrays to 128 entries: use `--truncate-length 0` (count rays with
+  `grep -o inf | wc -l`).
 
 ## Frames and rules
 - `base_footprint`: on the ground under the rear axle center. `base_link`: one wheel radius above it
@@ -129,9 +141,11 @@ to become active ("Managed nodes are active"). Gazebo runs server-only (no windo
   command-timeout watchdog.
 - The LIDAR scans a flat plane (~0.57 m in the sim). Keep the GPS, IMU, and any mast out of that plane.
   Anything lower is a blind spot for the 2D LIDAR.
+- Ultrasonics (sim): one front, one rear and four corner sensors at 45 deg outward, narrow cones, so the sides
+  between corners are not covered. Real firmware should publish `sensor_msgs/Range` on the `/us_range/*` topics.
 - Datum (45.0, -110.0) lives in THREE places that must match: world file, `ekf.yaml`, `boundary_canvas.py`
   parameters. All placeholders until the real test site is chosen.
-- Hardware: leave `sim_lift_signal.py` and `gps_covariance.py` (and the `gps/fix_cov` remap) out of the Pi
+- Hardware: leave `sim_lift_signal.py`, `gps_covariance.py` (and the `gps/fix_cov` remap) and `us_to_range.py` out of the Pi
   launch; the ESP32 publishes `/lift_down` and the Pi bridge must treat a missing signal as "lift not down".
   `lidar_odom.launch.py` has no argument for that yet.
 
@@ -142,6 +156,8 @@ EKFs: `ekf_filter_node` (odom frame, `/odometry/local`, owns `odom -> base_footp
 `ekf_filter_node_map` (`/odometry/global`, owns `map -> odom`). Nav2 reads `/odometry/local` and
 `/scan_filtered`. Velocity chain: `cmd_vel_nav` -> velocity smoother -> `cmd_vel_smoothed` -> collision
 monitor -> `/cmd_vel`.
+Ultrasonics: `/us/*` (5-ray scans) -> `us_to_range` (sim only) -> `/us_range/*` (Range) -> `range_layer` in both
+costmaps (between `obstacle_layer` and `inflation_layer`).
 
 ## Placeholders (replace with real values)
 | Item | Value | Status |
@@ -157,13 +173,15 @@ monitor -> `/cmd_vel`.
 | Goal tolerances | `xy` 0.5, `yaw` 3.14 | tuned in the sim only |
 | Costmap `inflation_radius` | 1.5 | placeholder (old project); `cost_scaling_factor` 1.0 |
 | Lift platform mass/size/speed, `lift_travel` | 5 kg / 0.4 x 0.4 m / 0.05 m/s / 1.2192 m | placeholder |
-| Sensor positions, ultrasonic angles/cone/range | see xacro | placeholder |
+| Sensor positions, ultrasonic angles/cone/range | see xacro (ultrasonics: `us_side_y` 0.28, `us_angle` pi/4) | placeholder |
 | Sim GPS noise and covariance | 1.5 m / 2.25 m^2 | placeholder |
 | rf2o speed / yaw-rate variance | 0.01 / 0.01 | placeholder guesses |
 | Scan gate `lift_timeout`, lift down threshold | 1.0 s, 0.01 m | placeholder |
 | `sim_nav` start delays | 10, 15, 22, 25, 26, 30, 30 s | guesses |
 | Nav2 footprint | [0.902, +-0.33] to [-0.216, +-0.33] | derived from the xacro, depends on track width |
-| rf20 gate limits | 1.5 m/s, 2.0 rad/s | 22 extra sim trees (tree_5 to tree_26) |
+| rf2o gate limits | 1.5 m/s, 2.0 rad/s | placeholder (generous guesses) |
+| Extra sim trees | `tree_5` to `tree_26` | placeholder positions |
+| Range layer (`phi`, thresholds, `clear_on_max_reading`) | 1.2, 0.2 / 0.8, true | from memory, not tuned |
 
 ## Open questions
 - Exact ultrasonic model, RPLIDAR S2 variant (30 m or 18 m), real GPS antenna position (needs a mast, out
@@ -186,9 +204,8 @@ monitor -> `/cmd_vel`.
   - `config/`: `slam_mapping.yaml`, `ekf.yaml`, `nav2_params.yaml`, `boundary.yaml` (git-ignored)
   - `launch/`: `slam`, `ekf`, `lidar_odom`, `nav2`, `sim_nav`
   - `scripts/`: `gps_covariance`, `odom_covariance`, `scan_gate`, `sim_lift_signal`, `boundary_canvas`,
-    `roam`, `control_panel`
+    `roam`, `control_panel`, `us_to_range`
 - `src/rf2o_laser_odometry`: cloned separately, git-ignored, NOT in this repo. Fetch:
   `cd ~/rover_ws/src && git clone -b ros2 https://github.com/MAPIRlab/rf2o_laser_odometry.git`, then
   `colcon build --packages-select rf2o_laser_odometry`
 - Measurements live as `xacro:property` values at the top of the xacro. Edit those, not the geometry.
-
