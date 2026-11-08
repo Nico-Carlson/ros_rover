@@ -28,6 +28,9 @@ Done in the sim:
 - rf2o speed gate and 22 extra sim trees (localization no longer blows up); `/patrol_status` topic; canvas slab
   shows only while drawing
 
+  - Firmware (2026-11-08): goal is manual-only with the new ROS-era ESP32 code first (the RC switch overrides Nav2, decided in the master ESP), then add Nav2. Plain UART serial + a Python bridge instead of micro-ROS (the old micro-ROS build lagged badly, cause unknown). First test uses placeholder pins; module files and real pins not yet reviewed. Details: DEVLOG "Firmware approach".
+- exec_depend entries added to rover_bringup and rover_description (rosdep check clean). On the Pi: rosdep install --from-paths src --ignore-src -r -y --skip-keys "cmake_modules ros_gz_sim ros_gz_bridge joint_state_publisher_gui"
+
 Open:
 - Stuck detector + recovery: skipped for now (decided); the roaming branch was merged without it.
 - Sliders reading real values at startup (they start at values hard-coded in control_panel.py).

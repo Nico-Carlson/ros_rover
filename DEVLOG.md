@@ -105,6 +105,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - [x] Canvas slab only while drawing; `/patrol_status` topic from roam (see "Canvas, status topic and RViz config")
 - [x] Show `/patrol_status` on the control panel (next, small)
 - [ ] Replace placeholder measurements and sensor specs with real ones
+- [x] exec_depend entries in both package.xml files (rover_bringup, rover_description), `rosdep check` clean except rf2o's own harmless `cmake_modules` error (branch `exec-depends`, 2026-11-08). Not yet tried on a real Pi.
 - [ ] ESP32 firmware (with watchdog) + Pi hardware bridge
 - [ ] Field testing
 
@@ -648,9 +649,6 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Do the real wheels sit outside the chassis? Track width (0.559) is almost equal to chassis width (0.562).
 - The real IMU (MPU6050 per old comments) probably has no compass heading, but navsat_transform needs a
   heading reference. The sim IMU may hide this. Revisit before hardware.
-- `rover_bringup/package.xml` was never checked: it probably lacks `exec_depend` entries for
-  `rover_description`, `nav2_bringup`, `robot_localization`, `slam_toolbox` and the nav2 packages the launches
-  use. A clean build on the Pi could fail without them.
 - Why rf2o produces impossible speeds (irregular scan timing? bad matches?). The gate in `odom_covariance.py` only
   hides it.
 - The stuck detector needs a second signal besides rf2o speed (rf2o fails in empty scenes and spikes).
@@ -670,7 +668,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
    and Smac's ~29 s configure are also unmeasured.
 2. Timing: the EKFs logged `Failed to meet update rate!` in the sim; a loaded Pi could repeat it and Nav2 would
    act on stale pose.
-3. Clean build: `rover_bringup/package.xml` probably lacks `exec_depend` entries (see Open questions).
+3. Clean build: exec_depend entries are declared now but untried on a real Pi. On the Pi use `rosdep install --from-paths src --ignore-src -r -y --skip-keys "cmake_modules ros_gz_sim ros_gz_bridge joint_state_publisher_gui"` (cmake_modules is rf2o's own stale dependency; the other three are sim/PC-only).
 4. Sim-only nodes (`sim_lift_signal.py`, `gps_covariance.py`, `us_to_range.py`) must be left out of the Pi launch, and
    `lidar_odom.launch.py` has no argument for that yet.
 
@@ -688,6 +686,34 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   trying it.
 
 ## Firmware approach (proposed, NOT final)
+### Decided so far (2026-11-08)
+- Order: (1) the new ESP32 codebase working with ROS in MANUAL mode only, with an RC switch that overrides any Nav2 command so the rover drives fully by hand; (2) only then add the Nav2 stack that works in the sim.
+- The manual/auto override lives in the master ESP (works with the Pi off or crashed). The RC receiver plugs straight into the master ESP.
+- Plain serial (UART RX/TX) instead of micro-ROS, hoping to fix the lag. micro-ROS also ran over a UART, so what changes is the protocol on top (text lines + checksum + a pyserial bridge on the Pi), not the wire.
+- The rover, ESPs and Pi were not available on 2026-11-08, so the first work uses PLACEHOLDER pins.
+- First test state (proposed, not confirmed): wheels off the ground, master drives from the RC like the pre-ROS firmware, the switch picks manual or auto, auto commands do nothing yet.
+
+### Firmware files
+- `SenserBoardRedone.ino` + `MasterBoardRedone.ino` (each with a `globals.h`): pre-ROS firmware, drove well manually.
+- `ROSSensorBoard.ino` + `ROSMasterBoard.ino` (each with a `globals.h`): micro-ROS version. Does not work at all now; earlier it had inoperable lag, cause never found.
+- NOT yet reviewed: the other module files (`gyro`, `warning_switch`, `bluetooth`, `battery`, limit switches, `gps` on the sensor side; `throttle_and_brakes`, `reverse`, `lift`, `turning` on the master side). The RC-to-motor logic and the real pin numbers are in them.
+
+### Findings from reading the sketches (GUESSES about the lag, nothing tested)
+- micro-ROS entities use `rclc_..._init_default`, which is reliable QoS. Over a slow serial link that can stall waiting for acknowledgements; best-effort is the usual choice for sensor streams.
+- The sensor board sent a full IMU message (three covariance arrays) plus GPS at 10 Hz over 115200 baud: about 4.5 KB/s of payload by my arithmetic, against about 11.5 KB/s link capacity, before micro-ROS framing. The baud rate can also be raised.
+- Old pre-ROS master: `Serial.readStringUntil('\n')` in the main loop has a default 1 s timeout, so a half-received Pi line could freeze throttle and steering for up to a second. The new design must never block in the control loop.
+- Old sensor-to-master packet: 10 raw bytes, no sync or checksum (one lost byte misaligns it for good). The ROS version added magic byte + sequence + CRC; keep that idea.
+- ROS master `globals.h` already has a mode-switch design: `autonomousMode`, manual below 1400 us, autonomous above 1600 us, 3 confirmation frames, `autonomousCommandTimeout` 500 ms, `sensorHeartbeatTimeout` 350 ms. By the names, the input is probably pin 22 (`turnswitch`); GUESS, confirm which transmitter switch it is. Throttle `pwmMin`/`pwmMax` changed from 980/1517 (pre-ROS) to 900/2100 (ROS); not investigated.
+- GPS pins are unresolved: the pre-ROS sketch comment says RX 3 / TX 1 (UART0); the pre-ROS `globals.h` says 16/17 (same pins as the sensor-to-master link); the ROS sensor `globals.h` says 16/17 "not sure these are right". The pre-ROS sketch never starts the GPS, so it settles nothing. Need the physical wiring.
+- The ESP32 has 3 hardware UARTs, each mappable to almost any free pins. The sensor board needs 3 serial links (Pi, master, GPS), and USB flashing/debug shares UART0. Options: (a) Pi on UART0 (cost: unplug to flash, no debug prints), master link and GPS on UART1/UART2; (b) GPS and the master link share one UART at 9600 baud (the master link only uses the sensor's TX, the GPS only its RX, and the link is about 40 bytes/s), Pi on UART1, UART0 free for USB. Not decided; the first test does not need GPS.
+
+### Open questions (firmware)
+- Which RC channel/transmitter switch is the manual/auto override (old docs list channels 1, 2, 6, 7 as used).
+- Where the GPS wires physically land on the sensor ESP.
+- How many UARTs the Pi exposes (overlay names in `config.txt` NOT checked).
+- Real pins for both boards, from the unseen module files.
+
+### Original Proposal
 - micro-ROS was tried before and had severe latency problems (cause unknown). Proposal: custom serial
   protocol, ESP32s run no ROS, and a Python bridge on the Pi (`pyserial`) translates to ROS topics.
 - Link: RX/TX between each ESP and the Pi (ESPs are powered by the rover), shared ground, 3.3 V on both
