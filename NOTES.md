@@ -41,9 +41,8 @@ cd ~/rover_ws
 colcon build --packages-select rover_bringup     # after ANY edit; launch uses the installed copy
 ros2 launch rover_bringup sim_nav.launch.py
 ```
-One command starts: sim (0 s), rf2o + scan gate (10 s), both EKFs (15 s), Nav2 (22 s), RViz (25 s),
-boundary canvas (26 s), roam (30 s), control panel (30 s). All delays are guesses. Nav2 needs ~30 s more
-to become active ("Managed nodes are active").
+One command starts: sim (0 s), us_to_range + rf2o + scan gate (10 s), EKFs (15 s), Nav2 (22 s), RViz (25 s), canvas (26 s), roam (30 s), panel (30 s). All delays are guesses. Nav2 needs ~30 s more
+to become active ("Managed nodes are active"). Gazebo runs server-only (no window): attach one with gz sim -g in another terminal.
 
 - Point to point: RViz "2D Goal Pose".
 - Manual driving only when Nav2 has no goal: `ros2 run teleop_twist_keyboard teleop_twist_keyboard`
@@ -82,8 +81,7 @@ to become active ("Managed nodes are active").
   below global.
 
 ## Known roaming problems
-- "Start occupied" (planner): rover parks near a tree and the planner rejects its own footprint. The costmap
-  has no static map, so a blind goal can land near an obstacle. Possible lever: global inflation radius.
+- Latest run: 34 succeeded, 5 aborted, 4 'Failed to make progress'. Remaining aborts: cancels (watchdog), 'Start occupied' next to trees, occasional planner timeouts.
 - `Failed to make progress` mid-route: the behavior tree clears the local costmap and retries, usually
   recovering. Cause unknown (stale costmap obstacle is a guess).
 - `yaw_goal_tolerance` is 3.14 (committed). The heading hypothesis behind it is UNSUPPORTED by testing.
@@ -119,6 +117,8 @@ to become active ("Managed nodes are active").
   listed twice, `controller_server.verbose not found`, one-time `Invalid frame ID "odom"` if Nav2 starts
   before the EKF, `/cmd_vel_teleop` in the topic list, rf2o `Waiting for laser_scans....`.
 - Sim runs slow (Gazebo real-time factor ~52 to 55%, `/scan` ~6.7 Hz). Not representative of the Pi.
+- rf2o publishes impossible speeds sometimes. odom_covariance.py drops them (max_speed 1.5, max_yaw_rate 2.0). Keep this gate on hardware too.
+- Rebuilding rover_description reinstalls rover.rviz from src: save RViz changes there first.
 
 ## Frames and rules
 - `base_footprint`: on the ground under the rear axle center. `base_link`: one wheel radius above it
@@ -163,6 +163,7 @@ monitor -> `/cmd_vel`.
 | Scan gate `lift_timeout`, lift down threshold | 1.0 s, 0.01 m | placeholder |
 | `sim_nav` start delays | 10, 15, 22, 25, 26, 30, 30 s | guesses |
 | Nav2 footprint | [0.902, +-0.33] to [-0.216, +-0.33] | derived from the xacro, depends on track width |
+| rf20 gate limits | 1.5 m/s, 2.0 rad/s | 22 extra sim trees (tree_5 to tree_26) |
 
 ## Open questions
 - Exact ultrasonic model, RPLIDAR S2 variant (30 m or 18 m), real GPS antenna position (needs a mast, out
@@ -172,6 +173,8 @@ monitor -> `/cmd_vel`.
 - Heading source for GPS fusion on the real rover.
 - Does rf2o hold up on rough, cluttered forest terrain? Pi CPU cost of rf2o + Nav2 (S2 gives 3200 points
   per scan) and Smac's ~29 s configure are unmeasured.
+- Why rf2o spikes (scan timing?)
+- Stuck detector needs a second signal besides rf2o speed (rf2o fails in empty scenes and spikes).
 
 ## Repo layout
 - Repo: github.com/Nico-Carlson/ros_rover (private), local folder `~/rover_ws`
