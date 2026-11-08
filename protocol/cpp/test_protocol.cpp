@@ -3,6 +3,7 @@
 #include <string.h>
 #include "protocol.h"
 #include "watchdog.h"
+#include "drive.h"
 
 static int failures = 0;
 
@@ -97,6 +98,37 @@ static void check_fresh(const char* name, const CommandWatchdog* w,
         printf("PASS  watchdog %s\n", name);
     } else {
         printf("FAIL  watchdog %s (got %d, expected %d)\n", name, got, expect);
+        failures++;
+    }
+}
+
+static void check_drive(float speed, int dac, bool rev, bool brake) {
+    DriveOutput o;
+    drive_from_speed(speed, &o);
+    if (o.throttle_dac == dac && o.reverse == rev && o.brake == brake) {
+        printf("PASS  drive %.2f -> dac %d, reverse %d, brake %d\n", speed, o.throttle_dac, o.reverse, o.brake);
+    } else {
+        printf("FAIL  drive %.2f -> dac %d, reverse %d, brake %d (expected %d, %d, %d)\n",
+               speed, o.throttle_dac, o.reverse, o.brake, dac, rev, brake);
+        failures++;
+    }
+}
+
+// Sweeps -2.00 to +2.00 m/s in 0.01 steps and checks the outputs never contradict.
+static void check_drive_sweep() {
+    int bad = 0;
+    for (int i = -200; i <= 200; i++) {
+        float s = i / 100.0f;
+        DriveOutput o;
+        drive_from_speed(s, &o);
+        if (o.brake && o.throttle_dac != 0) bad++;                 // brake and throttle together
+        if (o.throttle_dac > 0 && o.reverse != (s < 0)) bad++;     // relay disagrees with direction
+        if (o.brake && o.reverse) bad++;                           // relay on while stopped
+    }
+    if (bad == 0) {
+        printf("PASS  drive sweep -2.00 to 2.00\n");
+    } else {
+        printf("FAIL  drive sweep (%d bad speeds)\n", bad);
         failures++;
     }
 }
@@ -208,7 +240,7 @@ int main() {
     check_parse_cmd("CMD,0.3,12.5,0.0x", false, 0, 0, 0);      // junk after the number
     check_parse_cmd("CMD,nan,1,2", false, 0, 0, 0);            // nan rejected
     check_parse_cmd("BAT,12.4", false, 0, 0, 0);               // wrong type
-                                                               
+
     CommandWatchdog w;
     watchdog_init(&w);
     check_fresh("never fed is stale", &w, 100, 500, false);
@@ -220,6 +252,19 @@ int main() {
     watchdog_feed(&w, 0xFFFFFF00u);
     check_fresh("fresh across counter wrap", &w, 0x00000064u, 500, true);   // 356 ms later
     check_fresh("stale across counter wrap", &w, 0x000001FFu, 500, false);  // 767 ms later
+
+    check_drive(0.0f, 0, false, true);       // stopped
+    check_drive(0.05f, 0, false, true);      // exactly the stop band: still stopped
+    check_drive(0.06f, 10, false, false);    // just above: slow forward
+    check_drive(0.3f, 51, false, false);
+    check_drive(0.75f, 128, false, false);   // half scale
+    check_drive(1.5f, 255, false, false);    // full scale
+    check_drive(3.0f, 255, false, false);    // over full scale clamps
+    check_drive(-0.07f, 12, true, false);    // the old bug: small reverse stays reverse
+    check_drive(-0.3f, 51, true, false);
+    check_drive(-3.0f, 255, true, false);
+    check_drive(NAN, 0, false, true);        // garbage in, stopped out
+    check_drive_sweep();
 
     LineReader r;
     line_reader_init(&r);
