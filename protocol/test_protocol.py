@@ -1,4 +1,4 @@
-from protocol import make_line, parse_line, split_body, LineReader
+from protocol import make_line, parse_line, split_body, LineReader, make_cmd
 import os
 
 
@@ -53,3 +53,8 @@ def test_vectors():
         else:
             line = case[1]
             assert parse_line(line + "\n") is None, line
+
+
+def test_make_cmd():
+    line = make_cmd(0.3, 12.54, 0.0)
+    assert parse_line(line) == "CMD,0.30,12.5,0.00"
