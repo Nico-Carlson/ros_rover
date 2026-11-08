@@ -108,6 +108,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - [x] exec_depend entries in both package.xml files (rover_bringup, rover_description), `rosdep check` clean except rf2o's own harmless `cmake_modules` error (branch `exec-depends`, 2026-11-08). Not yet tried on a real Pi.
 - [x] Pre-ROS and old micro-ROS firmware both reviewed from source, 2026-11-08 (see "Pre-ROS firmware review" and "Old micro-ROS firmware review")
 - [ ] ESP32 firmware (with watchdog) + Pi hardware bridge
+- [ ] Serial protocol (Python + C++ done on PC, bridge and firmware not started)
 - [ ] Field testing
 
 
@@ -693,12 +694,64 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Plain serial (UART RX/TX) instead of micro-ROS, hoping to fix the lag. micro-ROS also ran over a UART, so what changes is the protocol on top (text lines + checksum + a pyserial bridge on the Pi), not the wire.
 - The rover, ESPs and Pi were not available on 2026-11-08, so the first work uses PLACEHOLDER pins.
 - First test state (proposed, not confirmed): wheels off the ground, master drives from the RC like the pre-ROS firmware, the switch picks manual or auto, auto commands do nothing yet.
+- Pi link: ONE dedicated UART (RX/TX) per ESP, no shared link and no USB adapters. PLACEHOLDER (no hardware access): both ESPs use UART0 (RX0/TX0) as in the old ROS firmware (master -> Pi UART0, sensor -> Pi UART2 per its comments). Consequences: USB flashing and debug prints share these pins, so unplug the Pi wires to flash and use a debug channel that does not depend on the Pi link (Bluetooth on the sensor board, something equivalent still to choose on the master). The Pi needs two UARTs; the overlay names in `config.txt` are still unchecked. The master<->sensor safety link stays on 16/17 (GPS moves to 32/33, see the open questions).
+- No hardware yet: work proceeds with PLACEHOLDER pins and no board. Pure logic (packet CRC and parser, mode switch, timeouts, throttle/brake/steer maps, reverse state machine, tilt math) is kept free of Arduino calls so it compiles and is tested on the PC. The Pi bridge is tested against a fake ESP script on a virtual serial port (`socat`). Everything is marked UNTESTED ON HARDWARE until the bench checklist in "Pre-ROS firmware review" has been run on the real boards.
+
+### Serial protocol plan (2026-11-08, PLAN ONLY: nothing written or tested yet)
+- Why: a UART is a raw byte stream with no message boundaries. The pre-ROS sensor-to-master link (10 raw bytes, no
+  markers) misaligned permanently after one lost byte. The micro-ROS version fixed that with a magic byte + CRC; the
+  idea is kept.
+- Format: one message per line, ending in a newline: `TYPE,field,field,...*CS`. `CS` is a checksum over every
+  character before the `*`, written as two uppercase hex digits. Proposed: XOR of all bytes (NMEA style, the same way
+  GPS modules do it; GPS NMEA lines can also be parsed this way). A line with a bad or missing checksum is dropped;
+  after any glitch the receiver waits for the next newline and recovers on its own. Example (illustrative, checksum
+  not computed): `CMD,0.30,12.5,0.0*5A`.
+- Rules: the receiver never blocks waiting for a line (read what is available, assemble into a buffer, handle a line
+  only when a full one has arrived); a maximum line length (PLACEHOLDER ~100 bytes) with the buffer reset on overflow;
+  debug text must never share this link (see the Pi link decision).
+- Messages (fields and rates are PLACEHOLDERS):
+  | Direction | Message | Carries |
+  |---|---|---|
+  | Pi -> ESP | `CMD` | speed (m/s), steering ANGLE (deg, computed on the Pi, not a yaw rate), lift speed |
+  | Pi -> ESP | `DANGER` | stop flag |
+  | ESP -> Pi | `IMU` | tilt, yaw rate, accelerations (Pi adds timestamp, frame_id, covariances) |
+  | ESP -> Pi | `GPS` | lat, lon, fix quality / HDOP, fix age (send only on a NEW fix, not repeats) |
+  | ESP -> Pi | `BAT` | battery voltage |
+  | ESP -> Pi | `LIFT` | up and down limit switch LEVELS (pressed or not), sent continuously |
+  | ESP -> Pi | `MODE` | manual or autonomous, danger and warning flags, brake state |
+- Watchdogs (carried over from the old designs): master with no fresh `CMD` for ~250 to 500 ms (PLACEHOLDER) =
+  zero throttle and brake applied; Pi with no ESP lines treats the lift as not down; master with no sensor
+  heartbeat (350 ms in the old firmware) = danger. The master<->sensor safety link keeps its own framed packet on 16/17.
+- Build order for this step: write the spec, then the encoder and parser once in Python and once in C++ (logic kept
+  free of Arduino calls so it runs on the PC), and make each test the other, including corrupted and dropped bytes.
+- NEXT STEP (user): write the checksum function in Python (about 6 lines: XOR the characters before `*`, format as two
+  uppercase hex digits), then a matching check function. All UNTESTED ON HARDWARE.
+
+### Serial protocol implementation (2026-11-08, branch serial-protocol)
+- Lives in `~/rover_ws/protocol/`, NOT a ROS package, so it tests on the PC with no ROS. `SPEC.md` is the
+  source of truth (DRAFT: only `CMD` and `MODE` defined, all fields PLACEHOLDER).
+- Python (`protocol.py`): `checksum`, `parse_line`, `make_line`, `LineReader` (string-based, `max_len` 100),
+  `split_body`. Tests: `cd ~/rover_ws/protocol && python3 -m pytest -v`.
+- C++ (`cpp/protocol.h`, `cpp/protocol.cpp`): `protocol_checksum`, `protocol_check_line`, `LineReader` struct
+  with `line_reader_feed` (one byte at a time, fixed 101-byte buffer, no Arduino calls, no heap). Tests:
+  `cd ~/rover_ws/protocol/cpp && g++ -Wall -o test_protocol test_protocol.cpp protocol.cpp && ./test_protocol`.
+- `vectors.txt` is a shared list (`ok|line|body`, `bad|line`) read by both test suites, so the two languages
+  cannot drift apart. Add every new message type's examples there. Python checksums for new cases come from
+  `checksum()`.
+- Verified on the PC only: Python 7 tests pass, C++ 25 checks pass. UNTESTED ON HARDWARE.
+- Known gaps: Python reader takes `str` (the Pi bridge must decode bytes); a line over 100 chars is dropped
+  whole, but the tail after the overflow point is read as the start of a new line, which then fails its
+  checksum (fine, but means one extra drop); `.gitignore` still lacks `__pycache__`, `.pytest_cache` and the
+  `cpp/test_protocol` binary.
+- NEXT: Pi bridge (`pyserial`) tested against a fake ESP on a `socat` virtual port; then the remaining message
+  types in `SPEC.md`; then the ESP32 sketch using the C++ code.
 
 ### Firmware files
 - `SenserBoardRedone.ino` + `MasterBoardRedone.ino` (each with a `globals.h`): pre-ROS firmware, drove well manually.
 - `ROSSensorBoard.ino` + `ROSMasterBoard.ino` (each with a `globals.h`): micro-ROS version. Does not work at all now; earlier it had inoperable lag, cause never found.
 - Pre-ROS module files REVIEWED 2026-11-08 (see "Pre-ROS firmware review"): `gyro`, `warning_switch`, `bluetooth`, `battery_monitor`, `lift_lower_limit`, `lift_upper_limit` (sensor side; no `gps` file was among the uploads and GPS is never started) and `throttle_and_brakes`, `reverse`, `lift`, `turning` (master side). 
 - ROS versions reviewed too: see "Old micro-ROS firmware review" (module files `*_1`, plus `gps_sensor`).
+
 
 ### Findings from reading the sketches (GUESSES about the lag, nothing tested)
 - micro-ROS entities use `rclc_..._init_default`, which is reliable QoS. Over a slow serial link that can stall waiting for acknowledgements; best-effort is the usual choice for sensor streams.
@@ -711,7 +764,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 
 ### Open questions (firmware)
 - Which transmitter channel is the manual/auto override. It lands on master pin 22 (`turnswitch`, > 1400 us = autonomous steering, per pre-ROS `turning.cpp`); the channel number is still unknown (not 1, 2, 6 or 7).
-- Where the GPS wires physically land on the sensor ESP.
+- Where the GPS wires physically land on the sensor ESP (unknown; no hardware access 2026-11-08). PLACEHOLDER for the rebuild: GPS RX = GPIO 32, TX = GPIO 33 on the sensor board (free there, not strapping pins, no clash with the 16/17 master link). When the rover is available, check the real wiring, then either move the wire or change the two pin defines to match. Both old firmwares put the GPS on 16/17, which clashes with the safety link.
 - How many UARTs the Pi exposes (overlay names in `config.txt` NOT checked).
 - Real pins: the pre-ROS pins are now known (see "Pre-ROS firmware review"); the ROS boards' pins are still unchecked.
 
