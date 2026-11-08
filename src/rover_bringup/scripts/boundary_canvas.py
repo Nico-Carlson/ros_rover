@@ -19,6 +19,7 @@ class BoundaryCanvas(Node):
         self.create_timer(1.0, self.publish_canvas)
         self.points = []
         self.closed = False
+        self.show_canvas = False
         self.declare_parameter("datum_lat", 45.0)
         self.declare_parameter("datum_lon", -110.0)
         self.declare_parameter(
@@ -32,8 +33,11 @@ class BoundaryCanvas(Node):
         self.line_pub = self.create_publisher(Marker, "boundary_line", 1)
         self.closed_pub = self.create_publisher(EmptyMsg, "boundary_closed", 1)
         self.create_subscription(PointStamped, "clicked_point", self.on_click, 10)
+        self.hide_canvas()
 
     def publish_canvas(self):
+        if not self.show_canvas:
+            return
         m = Marker()
         m.header.frame_id = "map"
         m.ns = "canvas"
@@ -64,6 +68,7 @@ class BoundaryCanvas(Node):
             self.closed_pub.publish(EmptyMsg())
             self.get_logger().info(f"Boundary closed with {len(self.points)} corners")
             self.publish_line()
+            self.hide_canvas()
             return
         self.points.append((msg.point.x, msg.point.y))
         self.get_logger().info(
@@ -78,6 +83,8 @@ class BoundaryCanvas(Node):
     def on_clear(self, request, response):
         self.points = []
         self.closed = False
+        self.show_canvas = True
+        self.publish_canvas()
         self.publish_line()
         self.get_logger().info("Boundary cleared")
         return response
@@ -117,6 +124,15 @@ class BoundaryCanvas(Node):
         if not self.points:
             m.action = Marker.DELETE
         self.line_pub.publish(m)
+
+    def hide_canvas(self):
+        self.show_canvas = False
+        m = Marker()
+        m.header.frame_id = "map"
+        m.ns = "canvas"
+        m.id = 0
+        m.action = Marker.DELETE
+        self.pub.publish(m)
 
 
 def main():
