@@ -1,0 +1,370 @@
+#!/usr/bin/env python3
+import rclpy
+from std_msgs.msg import Empty
+from std_msgs.msg import Empty, String
+from std_srvs.srv import Trigger
+from geometry_msgs.msg import Point, PoseStamped
+from visualization_msgs.msg import Marker
+from nav2_msgs.action import NavigateToPose
+from rclpy.action import ActionClient
+from rclpy.node import Node
+from tf2_ros import Buffer, TransformListener
+
+import random
+import math
+import os
+
+import yaml
+
+EARTH_RADIUS = 6378137.0
+
+
+def load_boundary(path):
+    with open(path) as f:
+        data = yaml.safe_load(f)
+    lat0 = data["datum"]["lat"]
+    lon0 = data["datum"]["lon"]
+    polygon = []
+    for c in data["corners"]:
+        y = math.radians(c["lat"] - lat0) * EARTH_RADIUS
+        x = math.radians(c["lon"] - lon0) * EARTH_RADIUS * math.cos(math.radians(lat0))
+        polygon.append((x, y))
+    return polygon
+
+
+def point_in_polygon(x, y, polygon):
+    inside = False
+    n = len(polygon)
+    for i in range(n):
+        x1, y1 = polygon[i]
+        x2, y2 = polygon[(i + 1) % n]
+        if (y1 > y) != (y2 > y):
+            x_cross = x1 + (y - y1) * (x2 - x1) / (y2 - y1)
+            if x < x_cross:
+                inside = not inside
+    return inside
+
+
+class VisitGrid:
+    def __init__(self, polygon, cell_size=5.0):
+        self.cell = cell_size
+        self.counts = {}
+        self.last_cell = None
+        xs = [p[0] for p in polygon]
+        ys = [p[1] for p in polygon]
+        for i in range(self.index(min(xs), 0)[0], self.index(max(xs), 0)[0] + 1):
+            for j in range(self.index(0, min(ys))[1], self.index(0, max(ys))[1] + 1):
+                cx, cy = self.center(i, j)
+                if point_in_polygon(cx, cy, polygon):
+                    self.counts[(i, j)] = 0
+
+    def index(self, x, y):
+        return (math.floor(x / self.cell), math.floor(y / self.cell))
+
+    def center(self, i, j):
+        return ((i + 0.5) * self.cell, (j + 0.5) * self.cell)
+
+    def mark(self, x, y):
+        c = self.index(x, y)
+        if c == self.last_cell:
+            return
+        self.last_cell = c
+        if c in self.counts:
+            self.counts[c] += 1
+
+    def least_visited(self):
+        lowest = min(self.counts.values())
+        choices = [c for c, n in self.counts.items() if n == lowest]
+        return self.center(*random.choice(choices))
+
+    def covered_around(self, x, y, radius, threshold):
+        for (i, j), n in self.counts.items():
+            cx, cy = self.center(i, j)
+            if math.hypot(cx - x, cy - y) <= radius and n < threshold:
+                return False
+        return True
+
+
+class SmoothNoise:
+    def __init__(self):
+        self.values = {}
+
+    def value(self, i):
+        if i not in self.values:
+            self.values[i] = random.uniform(-1.0, 1.0)
+        return self.values[i]
+
+    def at(self, t):
+        i = math.floor(t)
+        s = (1.0 - math.cos((t - i) * math.pi)) / 2.0
+        return self.value(i) * (1.0 - s) + self.value(i + 1) * s
+
+
+class Walker:
+    def __init__(
+        self,
+        polygon,
+        grid,
+        hop_min=5.0,
+        hop_max=8.0,
+        max_turn=math.radians(60),
+        radius=10.0,
+        threshold=1,
+    ):
+        self.polygon = polygon
+        self.grid = grid
+        self.hop_min = hop_min
+        self.hop_max = hop_max
+        self.max_turn = max_turn
+        self.radius = radius
+        self.threshold = threshold
+        self.noise = SmoothNoise()
+        self.t = 0.0
+        self.heading = 0.0
+        self.target = None
+
+    def update_target(self, x, y):
+        if self.target is None and self.grid.covered_around(
+            x, y, self.radius, self.threshold
+        ):
+            self.target = self.grid.least_visited()
+        if self.target is not None:
+            tx, ty = self.target
+            if math.hypot(tx - x, ty - y) < self.grid.cell:
+                self.target = None
+            else:
+                self.heading = math.atan2(ty - y, tx - x)
+
+    def next_goal(self, x, y):
+        self.update_target(x, y)
+        self.t += 0.4
+        self.heading += self.noise.at(self.t) * self.max_turn
+        hop = random.uniform(self.hop_min, self.hop_max)
+        for attempt in range(20):
+            h = self.heading if attempt == 0 else random.uniform(-math.pi, math.pi)
+            gx = x + hop * math.cos(h)
+            gy = y + hop * math.sin(h)
+            mx = x + hop / 2 * math.cos(h)
+            my = y + hop / 2 * math.sin(h)
+            if point_in_polygon(gx, gy, self.polygon) and point_in_polygon(
+                mx, my, self.polygon
+            ):
+                self.heading = h
+                return gx, gy
+        return None
+
+
+class RoamNode(Node):
+    def __init__(self):
+        super().__init__("roam")
+        self.declare_parameter(
+            "boundary_file",
+            os.path.expanduser("~/rover_ws/src/rover_bringup/config/boundary.yaml"),
+        )
+        self.polygon = []
+        self.grid = None
+        self.walker = None
+        self.goal_xy = None
+        self.goals_ok = 0
+        self.goals_failed = 0
+        self.goals_canceled = 0
+        self.load_boundary_file()
+        self.goal_xy = None
+        self.marker_pub = self.create_publisher(Marker, "roam_markers", 10)
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.client = ActionClient(self, NavigateToPose, "navigate_to_pose")
+        self.busy = False
+        self.patrolling = False
+        self.goal_handle = None
+        self.goal_start = None
+        self.declare_parameter("goal_timeout", 90.0)
+        self.create_service(Trigger, "start_patrol", self.on_start_patrol)
+        self.create_service(Trigger, "stop_patrol", self.on_stop_patrol)
+        self.create_subscription(Empty, "boundary_closed", self.on_boundary_closed, 10)
+        self.status_pub = self.create_publisher(String, "patrol_status", 10)
+        self.create_timer(1.0, self.try_start)
+
+    def get_pose(self):
+        try:
+            t = self.tf_buffer.lookup_transform(
+                "map", "base_footprint", rclpy.time.Time()
+            )
+        except Exception as e:
+            self.get_logger().warn(f"No pose yet: {e}")
+            return None
+        return t.transform.translation.x, t.transform.translation.y
+
+    def publish_markers(self):
+        if not self.polygon:
+            return
+        line = Marker()
+        line.header.frame_id = "map"
+        line.ns = "roam_boundary"
+        line.id = 0
+        line.type = Marker.LINE_STRIP
+        line.action = Marker.ADD
+        line.pose.orientation.w = 1.0
+        line.scale.x = 0.3
+        line.color.r = 1.0
+        line.color.g = 0.8
+        line.color.a = 1.0
+        for x, y in self.polygon + [self.polygon[0]]:
+            line.points.append(Point(x=x, y=y, z=0.1))
+        self.marker_pub.publish(line)
+        if self.goal_xy is not None:
+            ball = Marker()
+            ball.header.frame_id = "map"
+            ball.ns = "roam_goal"
+            ball.id = 1
+            ball.type = Marker.SPHERE
+            ball.action = Marker.ADD
+            ball.pose.position.x = self.goal_xy[0]
+            ball.pose.position.y = self.goal_xy[1]
+            ball.pose.position.z = 0.3
+            ball.pose.orientation.w = 1.0
+            ball.scale.x = 0.6
+            ball.scale.y = 0.6
+            ball.scale.z = 0.6
+            ball.color.g = 1.0
+            ball.color.a = 1.0
+            self.marker_pub.publish(ball)
+
+    def try_start(self):
+        self.publish_markers()
+        self.publish_status()
+        if not self.polygon:
+            return
+        pose = self.get_pose()
+        if pose is not None:
+            self.grid.mark(*pose)
+        if not self.patrolling:
+            return
+        if self.busy:
+            self.check_watchdog()
+            return
+        if not self.client.server_is_ready():
+            self.get_logger().info("Waiting for Nav2...")
+            return
+        if self.send_next_goal():
+            self.busy = True
+
+    def send_next_goal(self):
+        pose = self.get_pose()
+        if pose is None:
+            return False
+        self.grid.mark(*pose)
+        goal = self.walker.next_goal(*pose)
+        if goal is None:
+            self.get_logger().warn("No goal found inside the boundary")
+            return False
+        self.goal_xy = goal
+        msg = NavigateToPose.Goal()
+        msg.pose.header.frame_id = "map"
+        msg.pose.header.stamp = self.get_clock().now().to_msg()
+        msg.pose.pose.position.x = goal[0]
+        msg.pose.pose.position.y = goal[1]
+        msg.pose.pose.orientation.z = math.sin(self.walker.heading / 2)
+        msg.pose.pose.orientation.w = math.cos(self.walker.heading / 2)
+        self.get_logger().info(f"Sending goal ({goal[0]:.1f}, {goal[1]:.1f})")
+        self.goal_future = self.client.send_goal_async(msg)
+        self.goal_future.add_done_callback(self.on_goal_response)
+        self.goal_start = self.get_clock().now()
+        return True
+
+    def on_goal_response(self, future):
+        handle = future.result()
+        if not handle.accepted:
+            self.get_logger().warn("Goal rejected")
+            self.busy = False
+            return
+        self.get_logger().info("Goal accepted")
+        self.goal_handle = handle
+        self.result_future = handle.get_result_async()
+        self.result_future.add_done_callback(self.on_result)
+
+    def load_boundary_file(self):
+        path = self.get_parameter("boundary_file").value
+        if not os.path.exists(path):
+            self.get_logger().warn("No boundary file yet, draw one in RViz")
+            return
+        self.polygon = load_boundary(path)
+        self.grid = VisitGrid(self.polygon)
+        self.walker = Walker(self.polygon, self.grid)
+        self.goal_xy = None
+        self.goals_ok = 0
+        self.goals_failed = 0
+        self.goals_canceled = 0
+        self.get_logger().info(f"Loaded boundary with {len(self.polygon)} corners")
+
+    def publish_status(self):
+        if not self.polygon:
+            state = "No boundary"
+        elif not self.patrolling:
+            state = "Stopped"
+        elif self.busy:
+            state = "Patrolling"
+        else:
+            state = "Patrolling (waiting for a goal)"
+        unvisited = (
+            sum(1 for c in self.grid.counts.values() if c == 0) if self.grid else 0
+        )
+        text = (
+            f"{state} | goals ok {self.goals_ok}, failed {self.goals_failed}, "
+            f"canceled {self.goals_canceled} | unvisited cells {unvisited}"
+        )
+        self.status_pub.publish(String(data=text))
+
+    def on_boundary_closed(self, msg):
+        self.load_boundary_file()
+
+    def on_start_patrol(self, request, response):
+        if not self.polygon:
+            response.success = False
+            response.message = "No boundary yet"
+            return response
+        self.patrolling = True
+        response.success = True
+        response.message = "Patrol started"
+        return response
+
+    def on_stop_patrol(self, request, response):
+        self.patrolling = False
+        if self.busy and self.goal_handle is not None:
+            self.goal_handle.cancel_goal_async()
+        response.success = True
+        response.message = "Patrol stopped"
+        return response
+
+    def check_watchdog(self):
+        if self.goal_start is None or self.goal_handle is None:
+            return
+        elapsed = (self.get_clock().now() - self.goal_start).nanoseconds / 1e9
+        if elapsed > self.get_parameter("goal_timeout").value:
+            self.get_logger().warn(f"Goal timed out after {elapsed:.0f} s, cancelling")
+            self.goal_handle.cancel_goal_async()
+            self.goal_start = None
+
+    def on_result(self, future):
+        status = future.result().status
+        if status == 4:
+            self.goals_ok += 1
+        elif status == 5:
+            self.goals_canceled += 1
+        else:
+            self.goals_failed += 1
+        unvisited = sum(1 for c in self.grid.counts.values() if c == 0)
+        self.get_logger().info(
+            f"Goal finished with status {status}, {unvisited} cells unvisited"
+        )
+        self.busy = False
+        self.goal_handle = None
+
+
+def main():
+    rclpy.init()
+    rclpy.spin(RoamNode())
+
+
+if __name__ == "__main__":
+    main()
