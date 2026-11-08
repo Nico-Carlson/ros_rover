@@ -1,0 +1,11 @@
+# expected, line
+# ok lines: "ok|<line>|<body>"   rejected lines: "bad|<line>"
+ok|CMD,0.3,12.5,0.0*7D|CMD,0.3,12.5,0.0
+ok|CMD,0.30,12.5,0.0*4D|CMD,0.30,12.5,0.0
+ok|BAT,12.4*62|BAT,12.4
+bad|CMD,0.3,12.5,0.0*7E
+bad|CMD,0.3,12.5,0.0
+bad|CMD,0.3,12.5,0.0*7
+bad|CMD,0.3,12.5,0.0*7D1
+bad|BAT,12.4*00
+ok|*00|

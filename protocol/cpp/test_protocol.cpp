@@ -50,6 +50,56 @@ static void check_reader(const char* name, int got, int expect,
     }
 }
 
+static void run_vectors(const char* path) {
+    FILE* f = fopen(path, "r");
+    if (!f) {
+        printf("FAIL  cannot open %s\n", path);
+        failures++;
+        return;
+    }
+    char raw[256];
+    while (fgets(raw, sizeof(raw), f)) {
+        raw[strcspn(raw, "\r\n")] = '\0';
+        if (raw[0] == '\0' || raw[0] == '#') continue;
+
+        // split at '|' (at most 3 parts)
+        char* parts[3] = {0, 0, 0};
+        int count = 0;
+        char* p = raw;
+        parts[count++] = p;
+        while (*p && count < 3) {
+            if (*p == '|') {
+                *p = '\0';
+                parts[count++] = p + 1;
+            }
+            p++;
+        }
+
+        bool expect_ok = (strcmp(parts[0], "ok") == 0);
+        const char* line = parts[1];
+        const char* expect_body = (count > 2) ? parts[2] : "";
+
+        // feed the line plus a newline through the reader, byte by byte
+        LineReader r;
+        line_reader_init(&r);
+        char got_body[PROTOCOL_MAX_LINE + 1] = "";
+        int lines = feed_all(&r, line, got_body);
+        lines += feed_all(&r, "\n", got_body);
+
+        bool pass;
+        if (expect_ok) pass = (lines == 1) && strcmp(got_body, expect_body) == 0;
+        else           pass = (lines == 0);
+
+        if (pass) {
+            printf("PASS  vector %s|%s\n", parts[0], line);
+        } else {
+            printf("FAIL  vector %s|%s (got %d lines, body \"%s\")\n", parts[0], line, lines, got_body);
+            failures++;
+        }
+    }
+    fclose(f);
+}
+
 int main() {
     check_checksum("CMD,0.30,12.5,0.0", "4D");
     check_checksum("CMD,0.3,12.5,0.0", "7D");
@@ -90,6 +140,8 @@ int main() {
     check_reader("over-long line", n, 0, body, "");
     n = feed_all(&r, "CMD,0.3,12.5,0.0*7D\n", body);
     check_reader("recovers after overflow", n, 1, body, "CMD,0.3,12.5,0.0");
+
+    run_vectors("../vectors.txt");
 
     return failures;
 }

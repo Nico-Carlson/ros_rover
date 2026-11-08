@@ -50,7 +50,3 @@ def split_body(body):
 
 a = make_line("CMD", 0.3, 12.5, 0.0)
 b = make_line("BAT", 12.4)
-
-print(split_body("CMD,0.3,12.5,0.0"))
-print(split_body("BAT,12.4"))
-print(split_body("MODE"))
