@@ -108,7 +108,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - [x] exec_depend entries in both package.xml files (rover_bringup, rover_description), `rosdep check` clean except rf2o's own harmless `cmake_modules` error (branch `exec-depends`, 2026-11-08). Not yet tried on a real Pi.
 - [x] Pre-ROS and old micro-ROS firmware both reviewed from source, 2026-11-08 (see "Pre-ROS firmware review" and "Old micro-ROS firmware review")
 - [ ] ESP32 firmware (with watchdog) + Pi hardware bridge
-- [ ] Serial protocol (Python + C++ done on PC, bridge and firmware not started)
+- [ ] Serial protocol (Python + C++ + Pi bridge done on a virtual cable; ESP sketch and ROS node not started).
 - [ ] Field testing
 
 
@@ -729,22 +729,28 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 
 ### Serial protocol implementation (2026-11-08, branch serial-protocol)
 - Lives in `~/rover_ws/protocol/`, NOT a ROS package, so it tests on the PC with no ROS. `SPEC.md` is the
-  source of truth (DRAFT: only `CMD` and `MODE` defined, all fields PLACEHOLDER).
-- Python (`protocol.py`): `checksum`, `parse_line`, `make_line`, `LineReader` (string-based, `max_len` 100),
-  `split_body`. Tests: `cd ~/rover_ws/protocol && python3 -m pytest -v`.
+  source of truth (DRAFT: `CMD`, `MODE`, `LIFT`, `BAT` defined; all fields and rates PLACEHOLDER).
+- Python (`protocol.py`): `checksum`, `parse_line`, `make_line`, `make_cmd`, `make_lift`, `LineReader`
+  (string-based, `max_len` 100), `split_body`.
 - C++ (`cpp/protocol.h`, `cpp/protocol.cpp`): `protocol_checksum`, `protocol_check_line`, `LineReader` struct
-  with `line_reader_feed` (one byte at a time, fixed 101-byte buffer, no Arduino calls, no heap). Tests:
-  `cd ~/rover_ws/protocol/cpp && g++ -Wall -o test_protocol test_protocol.cpp protocol.cpp && ./test_protocol`.
-- `vectors.txt` is a shared list (`ok|line|body`, `bad|line`) read by both test suites, so the two languages
-  cannot drift apart. Add every new message type's examples there. Python checksums for new cases come from
-  `checksum()`.
-- Verified on the PC only: Python 7 tests pass, C++ 25 checks pass. UNTESTED ON HARDWARE.
-- Known gaps: Python reader takes `str` (the Pi bridge must decode bytes); a line over 100 chars is dropped
-  whole, but the tail after the overflow point is read as the start of a new line, which then fails its
-  checksum (fine, but means one extra drop); `.gitignore` still lacks `__pycache__`, `.pytest_cache` and the
-  `cpp/test_protocol` binary.
-- NEXT: Pi bridge (`pyserial`) tested against a fake ESP on a `socat` virtual port; then the remaining message
-  types in `SPEC.md`; then the ESP32 sketch using the C++ code.
+  with `line_reader_feed` (one byte at a time, fixed 101-byte buffer, no Arduino calls, no heap).
+- `vectors.txt`: shared list (`ok|line|body`, `bad|line`) read by BOTH test suites so the languages cannot
+  drift. Add every new message's examples there; get checksums from `checksum()`, not by hand.
+- Pi side: `bridge.py` has `Bridge` (pyserial, non-blocking, `poll()`, `send_cmd()`, `poll_with_lift()`) and
+  `LiftState` (`lift_down` true only if the latest LIFT line is under `timeout` 1.0 s old, down=1, up=0;
+  malformed lines ignored). `fake_esp.py` and `try_bridge.py` are manual tools for a `socat` virtual cable.
+- Tests (run from INSIDE `protocol/`, since running pytest from `~/rover_ws` also collects the failing
+  `rover_basics` flake8 test): `cd ~/rover_ws/protocol && python3 -m pytest -q` (20 tests, includes
+  `test_bridge.py`, which starts its own `socat`). C++: `cd cpp && g++ -Wall -o test_protocol
+  test_protocol.cpp protocol.cpp && ./test_protocol`.
+- Needs `sudo apt install python3-serial socat` (pip is not installed in the distrobox).
+- Verified on the PC only (virtual serial cable): good lines arrive, junk and corrupted lines are dropped and
+  the link recovers, CMD reaches the ESP, a silent ESP makes `lift_down` false. UNTESTED ON HARDWARE.
+- Known gaps: Python reader takes `str` (bridge decodes bytes); an over-long line leaves its tail read as a new
+  line (one extra drop, harmless); no ROS node yet; `BAT`, `IMU`, `GPS`, `DANGER` not in the Python or C++
+  helpers; the Pi still has to treat "both limits pressed" as a fault (done in `LiftState`).
+- NEXT: finish `IMU`, `GPS`, `DANGER` in the spec; the ESP32 master sketch using the C++ code (CMD in, MODE out,
+  command-timeout watchdog); a ROS node wrapping `Bridge`.
 
 ### Firmware files
 - `SenserBoardRedone.ino` + `MasterBoardRedone.ino` (each with a `globals.h`): pre-ROS firmware, drove well manually.
