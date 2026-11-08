@@ -72,3 +72,16 @@ def test_cmd_reaches_esp(link):
     bridge, esp = link
     bridge.send_cmd(0.3, 12.54, 0.0)
     assert collect_esp(esp) == ["CMD,0.30,12.5,0.00"]
+
+
+def test_lift_line_updates_state(link):
+    from bridge import LiftState
+
+    bridge, esp = link
+    state = LiftState()
+    esp.write(b"LIFT,1,0*16\n")
+    end = time.time() + 0.3
+    while time.time() < end:
+        bridge.poll_with_lift(state)
+        time.sleep(0.01)
+    assert state.lift_down(time.time()) is True

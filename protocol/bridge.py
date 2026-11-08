@@ -1,4 +1,5 @@
 import serial
+import time
 from protocol import LineReader, make_cmd, split_body
 
 
@@ -17,6 +18,15 @@ class Bridge:
 
     def send_cmd(self, speed, steer_deg, lift):
         self.ser.write(make_cmd(speed, steer_deg, lift).encode("ascii"))
+
+    def poll_with_lift(self, lift_state):
+        """Like poll(), but also feeds LIFT lines into lift_state."""
+        messages = self.poll()
+        now = time.time()
+        for kind, fields in messages:
+            if kind == "LIFT":
+                lift_state.update(fields, now)
+        return messages
 
 
 class LiftState:
