@@ -2,6 +2,7 @@
 #include <math.h>
 #include <string.h>
 #include "protocol.h"
+#include "watchdog.h"
 
 static int failures = 0;
 
@@ -85,6 +86,17 @@ static void check_parse_cmd(const char* body, bool expect_ok,
         printf("PASS  parse_cmd \"%s\" -> %s\n", body, ok ? "ok" : "rejected");
     } else {
         printf("FAIL  parse_cmd \"%s\" -> %s (%.2f, %.2f, %.2f)\n", body, ok ? "ok" : "rejected", rs, rt, rl);
+        failures++;
+    }
+}
+
+static void check_fresh(const char* name, const CommandWatchdog* w,
+                        uint32_t now, uint32_t timeout, bool expect) {
+    bool got = watchdog_fresh(w, now, timeout);
+    if (got == expect) {
+        printf("PASS  watchdog %s\n", name);
+    } else {
+        printf("FAIL  watchdog %s (got %d, expected %d)\n", name, got, expect);
         failures++;
     }
 }
@@ -196,6 +208,18 @@ int main() {
     check_parse_cmd("CMD,0.3,12.5,0.0x", false, 0, 0, 0);      // junk after the number
     check_parse_cmd("CMD,nan,1,2", false, 0, 0, 0);            // nan rejected
     check_parse_cmd("BAT,12.4", false, 0, 0, 0);               // wrong type
+                                                               
+    CommandWatchdog w;
+    watchdog_init(&w);
+    check_fresh("never fed is stale", &w, 100, 500, false);
+    watchdog_feed(&w, 1000);
+    check_fresh("fresh just after feed", &w, 1000, 500, true);
+    check_fresh("fresh at 400 ms", &w, 1400, 500, true);
+    check_fresh("fresh at exactly timeout", &w, 1500, 500, true);
+    check_fresh("stale at 501 ms", &w, 1501, 500, false);
+    watchdog_feed(&w, 0xFFFFFF00u);
+    check_fresh("fresh across counter wrap", &w, 0x00000064u, 500, true);   // 356 ms later
+    check_fresh("stale across counter wrap", &w, 0x000001FFu, 500, false);  // 767 ms later
 
     LineReader r;
     line_reader_init(&r);
