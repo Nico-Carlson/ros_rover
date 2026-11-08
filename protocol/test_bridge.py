@@ -85,3 +85,19 @@ def test_lift_line_updates_state(link):
         bridge.poll_with_lift(state)
         time.sleep(0.01)
     assert state.lift_down(time.time()) is True
+
+
+def test_lift_goes_not_down_when_esp_silent(link):
+    from bridge import LiftState
+
+    bridge, esp = link
+    state = LiftState(timeout=0.3)
+    esp.write(b"LIFT,1,0*16\n")
+    end = time.time() + 0.15
+    while time.time() < end:
+        bridge.poll_with_lift(state)
+        time.sleep(0.01)
+    assert state.lift_down(time.time()) is True
+    time.sleep(0.4)
+    bridge.poll_with_lift(state)
+    assert state.lift_down(time.time()) is False
