@@ -12,3 +12,6 @@ __pycache__/
 
 src/rf2o_laser_odometry/
 src/rover_bringup/config/boundary.yaml
+__pycache__/
+.pytest_cache/
+protocol/cpp/test_protocol
