@@ -98,13 +98,12 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - [ ] Heading source for GPS fusion on real hardware (real IMU likely has no compass)
 - [x] Scan-gating node (lift down only)
 - [x] Nav2 in the sim (own launch, footprint, filtered scan; real-hardware tuning still open)
-- [ ] Boundary roaming + stuck recovery (roaming, control panel and goal watchdog done; stuck detector and
-      recovery NOT built, see "Roaming and stuck recovery")
+- [x] Boundary roaming, control panel, goal watchdog (stuck detector and recovery SKIPPED for now by decision).
 - [x] Control panel with parameter sliders (see "Control panel")
 - [x] Ultrasonic range layer in both Nav2 costmaps (sim converter `us_to_range.py`, see "Ultrasonics in Nav2")
 - [x] rf2o speed gate in `odom_covariance.py` and 22 extra sim trees (see "Localization failures and fixes")
 - [x] Canvas slab only while drawing; `/patrol_status` topic from roam (see "Canvas, status topic and RViz config")
-- [ ] Show `/patrol_status` on the control panel (next, small)
+- [x] Show `/patrol_status` on the control panel (next, small)
 - [ ] Replace placeholder measurements and sensor specs with real ones
 - [ ] ESP32 firmware (with watchdog) + Pi hardware bridge
 - [ ] Field testing
@@ -460,7 +459,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   `minimum_turning_radius`, scan-silent handling (a gated-off scan looks like "no obstacles"),
   Pi CPU check, boundary roaming and stuck recovery. Goals around trees at longer range are untested.
 
-## Roaming and stuck recovery (branch roaming-and-recovery, IN PROGRESS, not merged)
+## Roaming and stuck recovery (merged without stuck recovery, tag roaming-and-panel-v1)
 - Plan: (1) boundary polygon editor, (2) roam goal generator, (3) scan stops (lift up, wait, lift down),
   (4) stuck detector (BOTH signals: commanded vs rf2o speed, and no progress toward the goal) + recovery,
   (5) a supervisor tying them together.
@@ -567,9 +566,8 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Slider changes last only until relaunch: copy keepers into `nav2_params.yaml`.
 - Local vs global (my reading of Nav2, not tested here): global = planner routes and "Start occupied" failures;
   local = how the controller passes obstacles and "Failed to make progress". Keep local at or below global.
-- `/patrol_status` exists (see "Canvas, status topic and RViz config") but the panel does not show it yet. NEXT: add a
-  label that subscribes to it.
-- Not done: patrol status label on the panel, reading real values at startup, tabs if it gets too tall.
+- DONE: a label under the sliders subscribes to /patrol_status and goes stale after 5 s. Not done: sliders reading real values at startup, tabs if the panel gets too tall.
+
 
 ## Ultrasonics in Nav2 (done in the sim, branch roaming-and-recovery)
 - The ultrasonics were publishing but unused. `scripts/us_to_range.py` (SIM ONLY, launched by `sim_nav` at 10 s)
@@ -688,6 +686,21 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Values tuned live must be copied back into `nav2_params.yaml` afterwards, or they are lost on relaunch.
 - A custom GUI (Python, Qt or a web page) is possible if `rqt_reconfigure` is too limited; decide after
   trying it.
+
+## Firmware approach (proposed, NOT final)
+- micro-ROS was tried before and had severe latency problems (cause unknown). Proposal: custom serial
+  protocol, ESP32s run no ROS, and a Python bridge on the Pi (`pyserial`) translates to ROS topics.
+- Link: RX/TX between each ESP and the Pi (ESPs are powered by the rover), shared ground, 3.3 V on both
+  sides (no level shifting here; the HC-SR04 echo pins still need it). Use a UART other than UART0 on the
+  ESP32 (UART0 is shared with USB flashing). The Pi needs two UARTs (overlay names in `config.txt` NOT
+  checked), or two USB-serial adapters, or one ESP relaying to the other.
+- Newline-terminated text lines with a checksum (`CMD,speed,steer`, `US,front_mid,1.82`, `LIFT,1`).
+  Kinematics (Twist to steering angle) on the Pi; the ESP maps speed/steer to throttle, servo, brake and
+  reverse following the rover's rules. Speed is open loop (no encoders).
+- Watchdog on both sides: no `CMD` for ~250 ms (placeholder) means zero throttle and brake set; no sensor
+  lines means the Pi treats the lift as not down.
+- Build order: sensor ESP first (cannot move anything), commands and motors last with wheels off the ground.
+- Latency estimate: 115200 baud is ~11.5 KB/s; the full message set is ~3.3 KB/s (my arithmetic).
 
 ## Next steps (in order)
 1. Add realistic IMU noise in the sim. On hardware: a real heading source for the map filter, drop

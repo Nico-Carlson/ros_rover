@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import sys
+import time
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QGroupBox, QSlider
 from rcl_interfaces.msg import Parameter as ParamMsg
@@ -7,6 +8,7 @@ from rcl_interfaces.msg import ParameterType, ParameterValue
 from rcl_interfaces.srv import SetParameters
 import rclpy
 from std_srvs.srv import Empty, Trigger
+from std_msgs.msg import String
 from rclpy.node import Node
 from PyQt5.QtCore import QTimer
 
@@ -98,6 +100,13 @@ class ControlPanel(QWidget):
             lambda: self.call_trigger(self.stop_client, "Stop")
         )
         self.status = QLabel("Ready")
+        self.patrol_label = QLabel("Patrol: waiting for status")
+        self.patrol_label.setWordWrap(True)
+        self.last_status_time = None
+        node.create_subscription(String, "patrol_status", self.on_patrol_status, 10)
+        self.stale_timer = QTimer(self)
+        self.stale_timer.timeout.connect(self.check_stale)
+        self.stale_timer.start(1000)
 
         mode_row = QHBoxLayout()
         mode_row.addWidget(self.point_radio)
@@ -218,6 +227,7 @@ class ControlPanel(QWidget):
         nav_box.setLayout(nav_layout)
         layout.addWidget(nav_box)
         layout.addWidget(roam_box)
+        layout.addWidget(self.patrol_label)
         layout.addWidget(self.status)
         self.setLayout(layout)
 
@@ -240,6 +250,16 @@ class ControlPanel(QWidget):
         future.add_done_callback(
             lambda f: self.status.setText("New: click corners in RViz")
         )
+
+    def on_patrol_status(self, msg):
+        self.last_status_time = time.monotonic()
+        self.patrol_label.setText(f"Patrol: {msg.data}")
+
+    def check_stale(self):
+        if self.last_status_time is None:
+            return
+        if time.monotonic() - self.last_status_time > 5.0:
+            self.patrol_label.setText("Patrol: no status (roam not running?)")
 
     def on_mode_changed(self):
         boundary = self.boundary_radio.isChecked()

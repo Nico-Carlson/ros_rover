@@ -29,8 +29,8 @@ Done in the sim:
   shows only while drawing
 
 Open:
-- Stuck detector + recovery (NOT built; the branch is not merged until it is)
-- Show `/patrol_status` on the control panel (next, small); sliders reading real values at startup
+- Stuck detector + recovery: skipped for now (decided); the roaming branch was merged without it.
+- Sliders reading real values at startup (they start at values hard-coded in control_panel.py).
 - Behavior when `/scan_filtered` goes silent (Nav2 would look like "no obstacles")
 - Real heading source for GPS fusion on hardware (the sim IMU is a perfect compass)
 - Realistic sim IMU noise; tune covariances against real data
@@ -84,6 +84,7 @@ to become active ("Managed nodes are active"). Gazebo runs server-only (no windo
 - Local vs global (my reading of Nav2, not tested here): global = planner routes and "Start occupied"
   failures; local = how the controller passes obstacles and "Failed to make progress". Keep local at or
   below global.
+- The panel shows /patrol_status in a label under the sliders. If no message arrives for 5 s (placeholder) it shows "no status (roam not running?)".
 
 ## Known roaming problems
 - Latest run: 34 succeeded, 5 aborted, 4 'Failed to make progress'. Remaining aborts: cancels (watchdog), 'Start occupied' next to trees, occasional planner timeouts.
