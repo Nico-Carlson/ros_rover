@@ -54,3 +54,7 @@ b = make_line("BAT", 12.4)
 
 def make_cmd(speed, steer_deg, lift):
     return make_line("CMD", f"{speed:.2f}", f"{steer_deg:.1f}", f"{lift:.2f}")
+
+
+def make_lift(down, up):
+    return make_line("LIFT", int(bool(down)), int(bool(up)))

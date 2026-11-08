@@ -1,4 +1,4 @@
-from protocol import make_line, parse_line, split_body, LineReader, make_cmd
+from protocol import make_line, parse_line, split_body, LineReader, make_cmd, make_lift
 import os
 
 
@@ -58,3 +58,8 @@ def test_vectors():
 def test_make_cmd():
     line = make_cmd(0.3, 12.54, 0.0)
     assert parse_line(line) == "CMD,0.30,12.5,0.00"
+
+
+def test_make_lift():
+    assert parse_line(make_lift(True, False)) == "LIFT,1,0"
+    assert parse_line(make_lift(False, False)) == "LIFT,0,0"
