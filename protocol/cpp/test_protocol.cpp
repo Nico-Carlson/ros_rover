@@ -4,6 +4,7 @@
 #include "protocol.h"
 #include "watchdog.h"
 #include "drive.h"
+#include "reverse_guard.h"
 
 static int failures = 0;
 
@@ -129,6 +130,21 @@ static void check_drive_sweep() {
         printf("PASS  drive sweep -2.00 to 2.00\n");
     } else {
         printf("FAIL  drive sweep (%d bad speeds)\n", bad);
+        failures++;
+    }
+}
+
+// Runs one loop of the guard with a speed command and checks the safe outputs.
+static void check_guard(const char* name, ReverseGuard* g, float speed, uint32_t now,
+                        int dac, bool rev, bool brake) {
+    DriveOutput want, out;
+    drive_from_speed(speed, &want);
+    reverse_guard_step(g, &want, now, REVERSE_SETTLE_MS, &out);
+    if (out.throttle_dac == dac && out.reverse == rev && out.brake == brake) {
+        printf("PASS  guard %s\n", name);
+    } else {
+        printf("FAIL  guard %s -> dac %d, reverse %d, brake %d (expected %d, %d, %d)\n",
+               name, out.throttle_dac, out.reverse, out.brake, dac, rev, brake);
         failures++;
     }
 }
@@ -265,6 +281,22 @@ int main() {
     check_drive(-3.0f, 255, true, false);
     check_drive(NAN, 0, false, true);        // garbage in, stopped out
     check_drive_sweep();
+
+    ReverseGuard g;
+    reverse_guard_init(&g);
+    check_guard("forward passes through", &g, 0.3f, 0, 51, false, false);
+    check_guard("reverse asked: stop first", &g, -0.3f, 100, 0, false, true);
+    check_guard("still waiting at 200 ms", &g, -0.3f, 300, 0, false, true);
+    check_guard("relay flips at settle time", &g, -0.3f, 600, 0, true, true);
+    check_guard("reverse throttle after flip", &g, -0.3f, 700, 51, true, false);
+    check_guard("forward asked: stop first", &g, 0.3f, 800, 0, true, true);
+    check_guard("stop request cancels wait", &g, 0.0f, 900, 0, true, true);
+    check_guard("reverse again passes at once", &g, -0.3f, 1000, 51, true, false);
+    check_guard("stopped holds the relay", &g, 0.0f, 1100, 0, true, true);
+    check_guard("new change starts a new timer", &g, 0.3f, 1200, 0, true, true);
+    check_guard("still waiting at 400 ms", &g, 0.3f, 1600, 0, true, true);
+    check_guard("flips back to forward", &g, 0.3f, 1700, 0, false, true);
+    check_guard("forward throttle after flip", &g, 0.3f, 1800, 51, false, false);
 
     LineReader r;
     line_reader_init(&r);
