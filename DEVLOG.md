@@ -759,9 +759,13 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Spec gaps still open: `DANGER` (Pi -> ESP), `IMU` and `GPS` messages are in the old plan table but have no
   exact fields in `SPEC.md`. Raw IMU axes/units and GPS fix-age fields need deciding (see the IMU and GPS
   findings in "Old micro-ROS firmware review": send only NEW GPS fixes, send HDOP/fix quality, stamp on the Pi).
-- C++ gap: the ESP side has the checksum, line checker and reader, but NO message builder yet (no C++
-  equivalent of `make_line`/`make_lift`), and no field parser (`CMD` fields to numbers). Both are needed before
-  the sketch, and both should be added to `vectors.txt`-style tests.
+- C++ side (updated 2026-11-08): checksum, line checker, `LineReader`, message builders (`protocol_make_line`,
+  `protocol_make_lift`, BAT and MODE builders) and the `CMD` parser are all done and tested on the PC.
+  Dead zone (1401 to 1599 us) now drops to manual immediately instead of holding the current mode.
+  `firmware/master_serial/` holds COPIES of the `protocol/cpp/` files (the Arduino IDE only compiles files inside
+  the sketch folder), so re-copy after any change there; `mode_switch` is not in the sketch yet.
+  Branch `serial-protocol` is still unmerged and untagged (when ready: `git checkout main && git merge --no-ff
+  serial-protocol && git tag serial-protocol-v1`).
 - Pure-logic modules for the master sketch, all in protocol/cpp/, tested on the PC in test_protocol.cpp (no Arduino calls, UNTESTED ON HARDWARE): watchdog (command freshness, never-seen = stale, millis wrap safe), drive (drive_from_speed: speed to throttle DAC, reverse relay and brake from ONE threshold, so the old “small reverse drives forward” bug cannot happen; 1.5 m/s full scale and 0.05 stop band are PLACEHOLDERS), reverse_guard (stop, settle 500 ms PLACEHOLDER, switch relay, go; no encoders, so it waits a fixed time and cannot confirm the rover stopped), mode_switch (manual at or below 1400 us, auto at or above 1600, between means manual, 3 frames to change, stale = manual, numbers from the old ROS firmware; transmitter channel still unknown). Compile: g++ -Wall -o test_protocol test_protocol.cpp protocol.cpp watchdog.cpp drive.cpp reverse_guard.cpp mode_switch.cpp && ./test_protocol. For the real boards: the master sketch uses all of these except test_protocol.cpp; the sensor sketch only needs protocol.
 - Pi UART options and pin choices are still PLACEHOLDER (see the Firmware approach decisions). Nothing here has
   touched real hardware.
@@ -772,6 +776,19 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Test habit: run `python3 -m pytest -q` only from inside `protocol/`; running it from `~/rover_ws` pulls in
   the failing `rover_basics` flake8 lint (976 style errors, unrelated, ignorable).
 - ROS node rover_bringup/scripts/esp_bridge.py (tested on the PC with a socat cable and printf, UNTESTED ON HARDWARE): reads the serial link at 50 Hz, publishes /lift_down from LiftState on a 10 Hz timer (false when the ESP is silent) and /battery_voltage (Float32, placeholder name). Subscribes /cmd_vel and sends CMD at 20 Hz; steering comes from protocol/kinematics.py (atan(wheelbase * wz / v), positive = left, clamped to 30 deg PLACEHOLDER, 0 at or below 0.05 m/s); a /cmd_vel older than 0.5 s (PLACEHOLDER) sends speed 0. CMakeLists.txt installs bridge.py, protocol.py and kinematics.py from ../../protocol/ next to the node (an install(FILES ...) block above ament_package()); package.xml has python3-serial. Not yet done: MODE is not published, /imu and /gps/fix wait for IMU/GPS in the spec, esp_bridge is not in sim_nav (sim-only: it must not run in the sim) and not in a hardware launch file. Also still to add to SPEC.md: steer positive = left.
+
+### Session log 2026-11-08 evening (firmware rebuild, pure logic + Pi node)
+All of this is UNTESTED ON HARDWARE (no Pi or ESPs available). C++ is tested on the PC only.
+
+DONE and tested on the PC (`cd ~/rover_ws/protocol/cpp && g++ -Wall -o test_protocol test_protocol.cpp protocol.cpp watchdog.cpp drive.cpp reverse_guard.cpp mode_switch.cpp && ./test_protocol | grep FAIL`; no output = no failures):
+- `protocol.cpp/.h`: `protocol_make_line`, `protocol_make_lift`, `protocol_make_bat`, `protocol_make_mode`, `protocol_parse_cmd` (strict: CMD plus exactly 3 finite numbers, outputs untouched on failure).
+- `watchdog` (command freshness, never-seen = stale, millis-wrap safe, 500 ms timeout PLACEHOLDER).
+- `drive` (`drive_from_speed`: ONE threshold decides throttle DAC, reverse and brake together; 1.5 m/s full scale and 0.05 m/s stop band PLACEHOLDERS; fixes the old "small reverse drives forward" bug).
+- `reverse_guard` (direction change = throttle 0 + brake, wait 500 ms PLACEHOLDER, flip relay, go; no encoders so it only waits a fixed time).
+- `mode_switch`: manual <= 1400 us, auto >= 1600, DEAD ZONE 1401-1599 = MANUAL immediately (matches the old ROS firmware; I first wrote "hold the current mode", which was wrong and was corrected), 3 frames in a row to change, stale = manual. CHECK: the dead-zone change in `mode_switch.cpp` and the replaced mode test block in `test_protocol.cpp` may not have been applied or run yet. Run `git status` and the test.
+- Python: `protocol/kinematics.py` `twist_to_steer_deg(v, wz, wheelbase=0.686, max_deg=30, stop_speed=0.05)` = atan(L*wz/v) in degrees, positive = LEFT, 0 at or below stop speed, clamps (30 deg PLACEHOLDER). `protocol/test_kinematics.py`. 27 pytest tests pass.
+- ROS node `rover_bringup/scripts/esp_bridge.py` (tested with `socat` + `printf`): reads serial at 50 Hz, publishes `/lift_down` (10 Hz timer, false when ESP silent) and `/battery_voltage` (Float32, placeholder name); subscribes `/cmd_vel`, sends `CMD` at 20 Hz (steering from kinematics.py); `/cmd_vel` older than 0.5 s (PLACEHOLDER) sends speed 0. `CMakeLists.txt` has an `install(FILES ../../protocol/bridge.py ../../protocol/protocol.py ../../protocol/kinematics.py ...)` block ABOVE `ament_package()`; `package.xml` has `python3-serial`. Not published yet: MODE, `/imu`, `/gps/fix`. Not in any launch file (sim-only nodes must stay out of a hardware launch).
+- First master sketch `firmware/master_serial/master_serial.ino` (+ copies of protocol, watchdog,
 
 ### Firmware files
 - `SenserBoardRedone.ino` + `MasterBoardRedone.ino` (each with a `globals.h`): pre-ROS firmware, drove well manually.
