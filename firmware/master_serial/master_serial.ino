@@ -3,6 +3,7 @@
 #include "drive.h"
 #include "reverse_guard.h"
 #include "mode_switch.h"
+#include "rc_channel.h"
 
 #define CMD_TIMEOUT_MS 500   // PLACEHOLDER: stop if no fresh CMD for this long
 #define DEBUG_PRINT 1        // set to 0 for real runs
@@ -34,6 +35,17 @@ ReverseGuard guard;
 #define PIN_STEER_SERVO   33
 #define PIN_LIFT_A        26    // both HIGH = stop
 #define PIN_LIFT_B        27
+
+// Manual throttle scale. The old firmware used 0.75 in normal mode (and 1.0 in warning).
+// 1.0 = full stick gives full DAC. Applied when the manual path is written.
+#define MANUAL_THROTTLE_SCALE 1.0f
+
+// RC pulse ranges in microseconds. PLACEHOLDERS: measure each channel on the bench
+// (min, neutral, max) and fix these numbers.
+#define THROTTLE_PULSE_MIN 980    // pre-ROS firmware value; stick pulled = LOWER pulse = more throttle
+#define THROTTLE_PULSE_MAX 1517
+#define STEER_PULSE_MIN   1000
+#define STEER_PULSE_MAX   2000
 // ===================================================
 
 float cmd_speed = 0, cmd_steer = 0, cmd_lift = 0;   // last good command
@@ -67,6 +79,50 @@ void IRAM_ATTR mode_isr() {
   }
 }
 
+
+RcChannel rc_steer    = {PIN_RC_STEER};
+RcChannel rc_throttle = {PIN_RC_THROTTLE};
+RcChannel rc_lift     = {PIN_RC_LIFT};
+RcChannel rc_reverse  = {PIN_RC_REVERSE};
+
+void IRAM_ATTR rc_isr(void* arg) {
+  RcChannel* c = (RcChannel*)arg;
+  uint32_t t = micros();
+  if (digitalRead(c->pin)) {
+    c->rise_us = t;
+  } else {
+    uint32_t w = t - c->rise_us;
+    if (w >= 500 && w <= 2500) {
+      portENTER_CRITICAL_ISR(&rcMux);
+      c->width_us = w;
+      c->new_at_us = t;
+      c->frames++;
+      portEXIT_CRITICAL_ISR(&rcMux);
+    }
+  }
+}
+
+// Returns true and fills *width if the channel has a fresh pulse.
+bool rc_read(RcChannel* c, int* width) {
+  uint32_t w, at, frames;
+  portENTER_CRITICAL(&rcMux);
+  w = c->width_us; at = c->new_at_us; frames = c->frames;
+  portEXIT_CRITICAL(&rcMux);
+  uint32_t now_us = micros();                // clock AFTER the snapshot
+  int32_t age = (int32_t)(now_us - at);
+  if (frames == 0 || age > (int32_t)RC_STALE_MS * 1000) return false;
+  *width = (int)w;
+  return true;
+}
+
+// Linear map with clamping (no cliff: out-of-range pulses saturate, not zero).
+int rc_clamp_map(int w, int in_min, int in_max, int out_min, int out_max) {
+  if (in_min == in_max) return out_min;
+  if (w < in_min) w = in_min;
+  if (w > in_max) w = in_max;
+  return out_min + (long)(w - in_min) * (out_max - out_min) / (in_max - in_min);
+}
+
 void setup() {
   Serial.begin(115200);
   line_reader_init(&reader);
@@ -76,6 +132,14 @@ void setup() {
   mode_switch_init(&mode);
   pinMode(PIN_RC_MODE, INPUT);
   attachInterrupt(digitalPinToInterrupt(PIN_RC_MODE), mode_isr, CHANGE);
+  pinMode(PIN_RC_STEER, INPUT);
+  pinMode(PIN_RC_THROTTLE, INPUT);
+  pinMode(PIN_RC_LIFT, INPUT);
+  pinMode(PIN_RC_REVERSE, INPUT);
+  attachInterruptArg(digitalPinToInterrupt(PIN_RC_STEER),    rc_isr, &rc_steer,    CHANGE);
+  attachInterruptArg(digitalPinToInterrupt(PIN_RC_THROTTLE), rc_isr, &rc_throttle, CHANGE);
+  attachInterruptArg(digitalPinToInterrupt(PIN_RC_LIFT),     rc_isr, &rc_lift,     CHANGE);
+  attachInterruptArg(digitalPinToInterrupt(PIN_RC_REVERSE),  rc_isr, &rc_reverse,  CHANGE);
 }
 
 void loop() {
