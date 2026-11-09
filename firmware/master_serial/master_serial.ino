@@ -4,6 +4,7 @@
 #include "reverse_guard.h"
 #include "mode_switch.h"
 #include "rc_channel.h"
+#include "brake.h"
 
 #define CMD_TIMEOUT_MS 500   // PLACEHOLDER: stop if no fresh CMD for this long
 #define DEBUG_PRINT 1        // set to 0 for real runs
@@ -56,6 +57,10 @@ bool manual_brake_wanted(bool have_signal, int pulse_us) {
   if (!have_signal) return true;
   return pulse_us > BRAKE_PULSE_MIN;
 }
+
+// Which BTS7960 PWM pin EXTENDS the brake actuator (applies the brake)? UNKNOWN.
+#define BRAKE_EXTEND_PIN  PIN_BRAKE_LPWM
+#define BRAKE_RETRACT_PIN PIN_BRAKE_RPWM
 // ===================================================
 
 float cmd_speed = 0, cmd_steer = 0, cmd_lift = 0;   // last good command
@@ -63,6 +68,7 @@ uint32_t last_print_ms = 0;
 uint32_t last_mode_ms = 0;
 
 ModeSwitch mode;
+BrakeState brake;
 
 #define RC_STALE_MS 100          // no new pulse for this long = receiver gone
 portMUX_TYPE rcMux = portMUX_INITIALIZER_UNLOCKED;
@@ -139,6 +145,18 @@ void setup() {
   attachInterruptArg(digitalPinToInterrupt(PIN_RC_LIFT),     rc_isr, &rc_lift,     CHANGE);
   attachInterruptArg(digitalPinToInterrupt(PIN_RC_REVERSE),  rc_isr, &rc_reverse,  CHANGE);
   attachInterruptArg(digitalPinToInterrupt(PIN_RC_MODE), rc_isr, &rc_mode, CHANGE);
+
+  brake_init(&brake);
+#if ENABLE_OUTPUTS
+  // UNTESTED ON HARDWARE. Brake H-bridge: enables high, both PWMs low = stopped.
+  pinMode(PIN_BRAKE_L_EN, OUTPUT);  digitalWrite(PIN_BRAKE_L_EN, HIGH);
+  pinMode(PIN_BRAKE_R_EN, OUTPUT);  digitalWrite(PIN_BRAKE_R_EN, HIGH);
+  pinMode(PIN_BRAKE_LPWM, OUTPUT);  digitalWrite(PIN_BRAKE_LPWM, LOW);
+  pinMode(PIN_BRAKE_RPWM, OUTPUT);  digitalWrite(PIN_BRAKE_RPWM, LOW);
+  pinMode(PIN_BRAKE_LIMIT, INPUT_PULLUP);
+  pinMode(PIN_REVERSE_RELAY, OUTPUT); digitalWrite(PIN_REVERSE_RELAY, LOW);
+  dacWrite(PIN_DAC_THROTTLE, 0);
+#endif
 }
 
 void loop() {
@@ -190,7 +208,32 @@ void loop() {
                                   out, sizeof(out));
     if (n > 0) Serial.write((const uint8_t*)out, n);
   }
-  // (Later: apply `safe` to the DAC, relay and brake pins here.)
+
+  // 4. Pick the source. Auto only if the switch says auto AND the Pi command is fresh.
+  //    Brake always wins: a manual brake request overrides auto.
+  bool use_auto = mode.autonomous && fresh;
+  int final_dac;
+  bool final_rev, final_brake;
+  if (use_auto) {
+    final_dac   = safe.throttle_dac;
+    final_rev   = safe.reverse;
+    final_brake = safe.brake || manual_brake;
+  } else {
+    final_dac   = manual_dac;     // already 0 if brake wanted or no signal
+    final_rev   = false;          // manual reverse comes in a later step
+    final_brake = manual_brake;
+  }
+  if (final_brake) final_dac = 0;
+
+  // 5. Drive the outputs. UNTESTED ON HARDWARE.
+#if ENABLE_OUTPUTS
+  dacWrite(PIN_DAC_THROTTLE, final_dac);
+  digitalWrite(PIN_REVERSE_RELAY, final_rev ? HIGH : LOW);
+  bool limit_pressed = (digitalRead(PIN_BRAKE_LIMIT) == LOW);
+  BrakeMotor bm = brake_step(&brake, final_brake, limit_pressed, now);
+  digitalWrite(BRAKE_EXTEND_PIN,  bm == BRAKE_MOTOR_EXTEND  ? HIGH : LOW);
+  digitalWrite(BRAKE_RETRACT_PIN, bm == BRAKE_MOTOR_RETRACT ? HIGH : LOW);
+#endif
 
 #if DEBUG_PRINT
   if (now - last_print_ms >= 200) {
