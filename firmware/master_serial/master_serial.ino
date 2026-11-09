@@ -9,9 +9,6 @@
 #define CMD_TIMEOUT_MS 500   // PLACEHOLDER: stop if no fresh CMD for this long
 #define DEBUG_PRINT 1        // set to 0 for real runs
 
-LineReader reader;
-CommandWatchdog watchdog;
-ReverseGuard guard;
 
 
 // ===================== FILL IN =====================
@@ -61,12 +58,20 @@ bool manual_brake_wanted(bool have_signal, int pulse_us) {
 // Which BTS7960 PWM pin EXTENDS the brake actuator (applies the brake)? UNKNOWN.
 #define BRAKE_EXTEND_PIN  PIN_BRAKE_LPWM
 #define BRAKE_RETRACT_PIN PIN_BRAKE_RPWM
+
+#define REVERSE_PULSE_MIN 2000   // PLACEHOLDER: old firmware toggled when ch7 pulse > 2000 us
 // ===================================================
 
 float cmd_speed = 0, cmd_steer = 0, cmd_lift = 0;   // last good command
 uint32_t last_print_ms = 0;
 uint32_t last_mode_ms = 0;
 
+bool manual_reverse = false;     // direction chosen with the ch7 switch
+bool rev_prev_pressed = false;
+
+LineReader reader;
+CommandWatchdog watchdog;
+ReverseGuard guard;
 ModeSwitch mode;
 BrakeState brake;
 
@@ -193,11 +198,26 @@ void loop() {
   bool manual_brake = manual_brake_wanted(thr_ok, thr_w);
   if (manual_brake) manual_dac = 0;          // brake always beats throttle
 
-  // 2. Decide. A stale command means speed 0, which means brake on.
+  // 1d. Manual reverse: each NEW press of the ch7 switch flips the direction.
+  int rev_w = 0;
+  bool rev_ok = rc_read(&rc_reverse, &rev_w);
+  bool rev_pressed = rev_ok && rev_w > REVERSE_PULSE_MIN;
+  if (rev_pressed && !rev_prev_pressed) manual_reverse = !manual_reverse;
+  rev_prev_pressed = rev_pressed;
+
+  // 2. Choose the source, then run it through the ONE reverse guard.
   bool fresh = watchdog_fresh(&watchdog, now, CMD_TIMEOUT_MS);
   float speed = fresh ? cmd_speed : 0.0f;
+  bool use_auto = mode.autonomous && fresh;
   DriveOutput want, safe;
-  drive_from_speed(speed, &want);
+  if (use_auto) {
+    drive_from_speed(speed, &want);
+  } else {
+    want.throttle_dac = (uint8_t)manual_dac;
+    want.reverse = manual_reverse;
+    want.brake = manual_brake;
+  }
+  if (manual_brake) { want.throttle_dac = 0; want.brake = true; }   // brake always wins
   reverse_guard_step(&guard, &want, now, REVERSE_SETTLE_MS, &safe);
 
   // 3. Tell the Pi our state at a steady 10 Hz.
@@ -209,21 +229,10 @@ void loop() {
     if (n > 0) Serial.write((const uint8_t*)out, n);
   }
 
-  // 4. Pick the source. Auto only if the switch says auto AND the Pi command is fresh.
-  //    Brake always wins: a manual brake request overrides auto.
-  bool use_auto = mode.autonomous && fresh;
-  int final_dac;
-  bool final_rev, final_brake;
-  if (use_auto) {
-    final_dac   = safe.throttle_dac;
-    final_rev   = safe.reverse;
-    final_brake = safe.brake || manual_brake;
-  } else {
-    final_dac   = manual_dac;     // already 0 if brake wanted or no signal
-    final_rev   = false;          // manual reverse comes in a later step
-    final_brake = manual_brake;
-  }
-  if (final_brake) final_dac = 0;
+  // 4. The guard output is final.
+  int final_dac = safe.throttle_dac;
+  bool final_rev = safe.reverse;
+  bool final_brake = safe.brake;
 
   // 5. Drive the outputs. UNTESTED ON HARDWARE.
 #if ENABLE_OUTPUTS
