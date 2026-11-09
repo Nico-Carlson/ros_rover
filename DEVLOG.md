@@ -777,6 +777,32 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   the failing `rover_basics` flake8 lint (976 style errors, unrelated, ignorable).
 - ROS node rover_bringup/scripts/esp_bridge.py (tested on the PC with a socat cable and printf, UNTESTED ON HARDWARE): reads the serial link at 50 Hz, publishes /lift_down from LiftState on a 10 Hz timer (false when the ESP is silent) and /battery_voltage (Float32, placeholder name). Subscribes /cmd_vel and sends CMD at 20 Hz; steering comes from protocol/kinematics.py (atan(wheelbase * wz / v), positive = left, clamped to 30 deg PLACEHOLDER, 0 at or below 0.05 m/s); a /cmd_vel older than 0.5 s (PLACEHOLDER) sends speed 0. CMakeLists.txt installs bridge.py, protocol.py and kinematics.py from ../../protocol/ next to the node (an install(FILES ...) block above ament_package()); package.xml has python3-serial. Not yet done: MODE is not published, /imu and /gps/fix wait for IMU/GPS in the spec, esp_bridge is not in sim_nav (sim-only: it must not run in the sim) and not in a hardware launch file. Also still to add to SPEC.md: steer positive = left.
 
+### Master sketch progress (2026-11-08, branch serial-protocol, pushed; compile-only, UNTESTED ON HARDWARE)
+- `firmware/master_serial/` holds COPIES of the `protocol/cpp/` files (the Arduino IDE only compiles files inside
+  the sketch folder). Re-copy after any change in `protocol/cpp/`. Pure logic is tested on the PC; the .ino is not.
+- Every uncertain value (pins, pulse ranges, thresholds) sits in one `FILL IN` block at the top of `master_serial.ino`.
+  Pins are the pre-ROS ones from `globals.h`. `ENABLE_OUTPUTS` is 0: no motor pin is touched until it is set to 1.
+- RC inputs: edge interrupts through `RcChannel` (`rc_channel.h`, kept in its own header because the Arduino IDE's
+  auto-generated prototypes broke when the struct was in the .ino). One ISR, five channels (steer, throttle, lift,
+  reverse, mode). Freshness check (100 ms) after the snapshot. `rc_clamp_map` saturates instead of returning 0, so
+  the old range cliff is gone. Pulse ranges are the old placeholders; measure on the bench.
+- DECIDED: manual throttle is at 100% (`MANUAL_THROTTLE_SCALE` 1.0). The old firmware capped it at 0.75. The DAC may
+  still not reach full throttle (3.3 V vs a controller that may want ~4 V; unverified, multimeter test).
+- Mode switch: `mode_switch` (dead zone 1401 to 1599 us now drops to manual immediately), stale = manual.
+- Brake: new `brake` module (extend until the limit switch, retract for a fixed 2000 ms, brake always wins), tested on
+  the PC. Manual brake request is ch2 pulse > 2000 us. PROPOSED, not confirmed: loss of RC signal = brake ON (the
+  old firmware released it and coasted). The receiver's own failsafe must also be set; a receiver that keeps
+  repeating the last pulse would never trigger "stale".
+- Manual reverse: ch7 rising edge toggles direction (no `delay`, a held switch does not re-toggle). Manual and auto
+  both go through the ONE `reverse_guard` (stop, settle 500 ms, flip relay). Direction survives a brake press.
+- `MODE` is sent to the Pi at 10 Hz. `danger` and `warning` are hard-coded 0 until the sensor board is wired in:
+  MUST be fixed before any real driving.
+- Source choice: auto only if the switch says auto AND the Pi `CMD` is fresh (500 ms); otherwise manual.
+- Not done in the sketch: steering servo output, lift, sensor-board heartbeat and danger, `DEBUG_PRINT` shares the
+  Pi link (set to 0 before wiring the Pi to UART0), which BTS7960 pin extends the brake (`BRAKE_EXTEND_PIN` is a
+  guess), pin 22's transmitter channel number, receiver voltage (pin 22 is 3.3 V only).
+- Branch `serial-protocol` is still unmerged and untagged.
+
 ### Session log 2026-11-08 evening (firmware rebuild, pure logic + Pi node)
 All of this is UNTESTED ON HARDWARE (no Pi or ESPs available). C++ is tested on the PC only.
 
@@ -1115,8 +1141,7 @@ Sensor data for the Pi (these will bite the EKF):
    C++ builders and `CMD` parser, pure-logic modules (`watchdog`, `drive`, `reverse_guard`, `mode_switch`),
    `kinematics.py`, the `esp_bridge` ROS node (both directions), and a first master sketch
    (`firmware/master_serial`, no motors). Remaining, in order:
-   a. Master sketch: RC reads, mode switch, throttle/brake/reverse outputs behind `ENABLE_OUTPUTS`, `MODE`
-      reply; every uncertain value in one marked `FILL IN` block at the top.
+   a. RC reads, mode switch, throttle, brake, manual reverse, and MODE are done, and steering, lift, and sensor danger remain
    b. Sensor sketch: `LIFT` (limit-switch levels), `BAT`, tilt, same `FILL IN` block.
    c. Pi side: publish `MODE`, add `IMU`/`GPS`/`DANGER` to the spec, a hardware launch file (without the
       sim-only nodes), then the bench checklist in "Pre-ROS firmware review".
