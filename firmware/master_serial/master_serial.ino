@@ -55,35 +55,14 @@ uint32_t last_mode_ms = 0;
 ModeSwitch mode;
 
 #define RC_STALE_MS 100          // no new pulse for this long = receiver gone
-
-volatile uint32_t mode_rise_us = 0;
-volatile uint32_t mode_width_us = 0;
-volatile uint32_t mode_new_at_us = 0;
-volatile uint32_t mode_frames = 0;
 portMUX_TYPE rcMux = portMUX_INITIALIZER_UNLOCKED;
 uint32_t mode_frames_seen = 0;
-
-void IRAM_ATTR mode_isr() {
-  uint32_t t = micros();
-  if (digitalRead(PIN_RC_MODE)) {
-    mode_rise_us = t;                       // pulse started
-  } else {
-    uint32_t w = t - mode_rise_us;          // pulse ended
-    if (w >= 500 && w <= 2500) {            // ignore garbage widths
-      portENTER_CRITICAL_ISR(&rcMux);
-      mode_width_us = w;
-      mode_new_at_us = t;
-      mode_frames++;
-      portEXIT_CRITICAL_ISR(&rcMux);
-    }
-  }
-}
-
 
 RcChannel rc_steer    = {PIN_RC_STEER};
 RcChannel rc_throttle = {PIN_RC_THROTTLE};
 RcChannel rc_lift     = {PIN_RC_LIFT};
 RcChannel rc_reverse  = {PIN_RC_REVERSE};
+RcChannel rc_mode = {PIN_RC_MODE};
 
 void IRAM_ATTR rc_isr(void* arg) {
   RcChannel* c = (RcChannel*)arg;
@@ -131,7 +110,6 @@ void setup() {
 
   mode_switch_init(&mode);
   pinMode(PIN_RC_MODE, INPUT);
-  attachInterrupt(digitalPinToInterrupt(PIN_RC_MODE), mode_isr, CHANGE);
   pinMode(PIN_RC_STEER, INPUT);
   pinMode(PIN_RC_THROTTLE, INPUT);
   pinMode(PIN_RC_LIFT, INPUT);
@@ -140,6 +118,7 @@ void setup() {
   attachInterruptArg(digitalPinToInterrupt(PIN_RC_THROTTLE), rc_isr, &rc_throttle, CHANGE);
   attachInterruptArg(digitalPinToInterrupt(PIN_RC_LIFT),     rc_isr, &rc_lift,     CHANGE);
   attachInterruptArg(digitalPinToInterrupt(PIN_RC_REVERSE),  rc_isr, &rc_reverse,  CHANGE);
+  attachInterruptArg(digitalPinToInterrupt(PIN_RC_MODE), rc_isr, &rc_mode, CHANGE);
 }
 
 void loop() {
@@ -160,19 +139,13 @@ void loop() {
     }
   }
 
-  // 1b. Mode switch: take a snapshot first, THEN read the clock.
-  uint32_t w, at, frames;
-  portENTER_CRITICAL(&rcMux);
-  w = mode_width_us; at = mode_new_at_us; frames = mode_frames;
-  portEXIT_CRITICAL(&rcMux);
-  uint32_t now_us = micros();
-  int32_t age_us = (int32_t)(now_us - at);
-
-  if (frames == 0 || age_us > (int32_t)RC_STALE_MS * 1000) {
+  // 1b. Mode switch
+  int mode_w;
+  if (!rc_read(&rc_mode, &mode_w)) {
     mode_switch_stale(&mode);               // no signal = manual
-  } else if (frames != mode_frames_seen) {
-    mode_frames_seen = frames;
-    mode_switch_frame(&mode, (int)w);       // one call per NEW pulse
+  } else if (rc_mode.frames != mode_frames_seen) {
+    mode_frames_seen = rc_mode.frames;
+    mode_switch_frame(&mode, mode_w);       // one call per NEW pulse
   }
 
   // 2. Decide. A stale command means speed 0, which means brake on.
