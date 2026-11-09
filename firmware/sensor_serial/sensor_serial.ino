@@ -1,4 +1,7 @@
 #include "protocol.h"
+#include <Wire.h>
+#include <Adafruit_MPU6050.h>
+#include "tilt.h"
 
 // ===================== FILL IN =====================
 // Every uncertain value lives here. Check against the real wiring.
@@ -11,16 +14,35 @@
 #define BAT_DIVIDER_SCALE (39.8f / 2.39f)   // PLACEHOLDER from the old firmware; verify with a multimeter
 #define BAT_SEND_MS       1000    // 1 Hz, matches SPEC.md
 #define BAT_SAMPLES       16      // average to smooth ADC noise
+
+// MPU6050 mounting. UNKNOWN: the old firmware's offsets suggested the board is mounted flipped.
+// Level should read roll ~0, pitch ~0. If it reads roll ~180, set MPU_FLIP_Z to -1.
+#define MPU_SIGN_X  1.0f
+#define MPU_SIGN_Y  1.0f
+#define MPU_SIGN_Z  1.0f
+#define MPU_DEAD_MS 350      // no good reading for this long = danger (a dead sensor is not "level")
+#define MPU_READ_MS 20       // 50 Hz
 // ===================================================
 
 // NOTE: Serial (UART0) is the Pi link. Never print debug text on it.
 uint32_t last_lift_ms = 0;
 uint32_t last_bat_ms = 0;
 
+Adafruit_MPU6050 mpu;
+TiltState tilt;
+bool mpu_ok = false;
+uint32_t last_mpu_ms = 0;
+uint32_t last_good_mpu_ms = 0;
+uint32_t last_mpu_try_ms = 0;
+
 void setup() {
   Serial.begin(115200);
   pinMode(PIN_LIFT_LOWER_LIMIT, INPUT_PULLUP);
   pinMode(PIN_LIFT_UPPER_LIMIT, INPUT_PULLUP);
+
+  tilt_init(&tilt);
+  mpu_ok = mpu.begin();            // ONCE, not every loop like the old firmware
+  last_good_mpu_ms = millis();
 }
 
 void loop() {
@@ -47,4 +69,26 @@ void loop() {
     size_t n = protocol_make_bat(volts, out, sizeof(out));
     if (n > 0) Serial.write((const uint8_t*)out, n);
   }
+
+  // Retry the MPU every second if it is not up (begin() resets the chip, so never per loop).
+  if (!mpu_ok && now - last_mpu_try_ms >= 1000) {
+    last_mpu_try_ms = now;
+    mpu_ok = mpu.begin();
+  }
+
+  // Tilt: read at 50 Hz, update flags. A dead sensor means danger.
+  if (mpu_ok && now - last_mpu_ms >= MPU_READ_MS) {
+    last_mpu_ms = now;
+    sensors_event_t a, g, temp;
+    mpu.getEvent(&a, &g, &temp);
+    float roll, pitch;
+    if (tilt_angles(a.acceleration.x * MPU_SIGN_X, a.acceleration.y * MPU_SIGN_Y,
+                    a.acceleration.z * MPU_SIGN_Z, &roll, &pitch)) {
+      tilt_update(&tilt, roll, pitch);
+      last_good_mpu_ms = now;
+    }
+  }
+  bool sensor_dead = (uint32_t)(now - last_good_mpu_ms) > MPU_DEAD_MS;
+  bool tilt_danger = tilt.danger || sensor_dead;
+  bool tilt_warning = tilt.warning; 
 }
