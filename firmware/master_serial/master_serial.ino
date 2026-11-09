@@ -5,6 +5,7 @@
 #include "mode_switch.h"
 #include "rc_channel.h"
 #include "brake.h"
+#include "lift_cmd.h"
 #include <ESP32Servo.h>
 
 #define CMD_TIMEOUT_MS 500   // PLACEHOLDER: stop if no fresh CMD for this long
@@ -65,6 +66,9 @@ bool manual_brake_wanted(bool have_signal, int pulse_us) {
 #define STEER_AUTO_MAX_DEG  30.0f   // PLACEHOLDER: real max steer angle never measured
 #define STEER_AUTO_SIGN     1       // +1: higher pulse = left. UNKNOWN, flip to -1 if inverted
 #define STEER_CENTER_US     1500
+
+#define LIFT_UP_PULSE_MIN    1800   // old firmware: ch6 > 1800 = up
+#define LIFT_DOWN_PULSE_MAX  1400   // old firmware: ch6 < 1400 = down
 // ===================================================
 
 float cmd_speed = 0, cmd_steer = 0, cmd_lift = 0;   // last good command
@@ -148,6 +152,16 @@ int auto_steer_us(float deg) {
   return STEER_CENTER_US + (int)(frac * 500.0f);
 }
 
+
+// Manual lift from ch6. No signal = STOP (the old ROS firmware drove DOWN on stale; that is a regression).
+// Only moves when the rover is stopped (throttle 0).
+LiftCmd manual_lift_cmd(bool have_signal, int pulse_us, int throttle_dac) {
+  if (!have_signal || throttle_dac != 0) return LIFT_STOP;
+  if (pulse_us > LIFT_UP_PULSE_MIN)   return LIFT_UP;
+  if (pulse_us < LIFT_DOWN_PULSE_MAX) return LIFT_DOWN;
+  return LIFT_STOP;
+}
+
 void setup() {
   Serial.begin(115200);
   line_reader_init(&reader);
@@ -179,6 +193,9 @@ void setup() {
 
   steer_servo.attach(PIN_STEER_SERVO, 1000, 2000);
   steer_servo.writeMicroseconds(STEER_CENTER_US);
+
+  pinMode(PIN_LIFT_A, OUTPUT); digitalWrite(PIN_LIFT_A, HIGH);   // both HIGH = stop
+  pinMode(PIN_LIFT_B, OUTPUT); digitalWrite(PIN_LIFT_B, HIGH);
 #endif
 }
 
@@ -258,6 +275,11 @@ void loop() {
   bool final_rev = safe.reverse;
   bool final_brake = safe.brake;
 
+  // 4b. Lift (manual only). Uses the final throttle so it never moves while driving.
+  int lift_w = 0;
+  bool lift_ok = rc_read(&rc_lift, &lift_w);
+  LiftCmd lift_cmd = manual_lift_cmd(lift_ok, lift_w, final_dac);
+
   // 5. Drive the outputs. UNTESTED ON HARDWARE.
   int steer_us = use_auto ? auto_steer_us(cmd_steer) : manual_steer_us;
 
@@ -269,14 +291,17 @@ void loop() {
   digitalWrite(BRAKE_EXTEND_PIN,  bm == BRAKE_MOTOR_EXTEND  ? HIGH : LOW);
   digitalWrite(BRAKE_RETRACT_PIN, bm == BRAKE_MOTOR_RETRACT ? HIGH : LOW);
   steer_servo.writeMicroseconds(steer_us);
+
+  digitalWrite(PIN_LIFT_A, lift_cmd == LIFT_UP   ? HIGH : (lift_cmd == LIFT_DOWN ? LOW  : HIGH));
+  digitalWrite(PIN_LIFT_B, lift_cmd == LIFT_DOWN ? HIGH : (lift_cmd == LIFT_UP   ? LOW  : HIGH));
 #endif
 
 #if DEBUG_PRINT
   if (now - last_print_ms >= 200) {
     last_print_ms = now;
-    Serial.printf("# fresh=%d speed=%.2f dac=%u rev=%d brake=%d settling=%d auto=%d manual_dac=%d mbrake=%d steer=%d\n",
+    Serial.printf("# fresh=%d speed=%.2f dac=%u rev=%d brake=%d settling=%d auto=%d manual_dac=%d mbrake=%d steer=%d\n lift=%d",
                   fresh, speed, safe.throttle_dac, safe.reverse, safe.brake,
-                  guard.settling, mode.autonomous, manual_dac, manual_brake, steer_us);
+                  guard.settling, mode.autonomous, manual_dac, manual_brake, steer_us, (int)lift_cmd);
   }
 #endif
 }
