@@ -319,8 +319,10 @@ int main() {
     check_mode("2 auto frames: not yet", &m, false);
     feed_mode(&m, 1700, 1);
     check_mode("3rd auto frame switches", &m, true);
-    feed_mode(&m, 1500, 5);
-    check_mode("dead zone holds auto", &m, true);
+    feed_mode(&m, 1500, 1);
+    check_mode("dead zone drops to manual", &m, false);
+    feed_mode(&m, 1700, 3);
+    check_mode("auto again after 3 frames", &m, true);
     feed_mode(&m, 1300, 2);
     feed_mode(&m, 1700, 1);
     feed_mode(&m, 1300, 2);
@@ -345,8 +347,9 @@ int main() {
     check_mode("1599 is dead zone", &m, false);
     feed_mode(&m, 1600, 3);
     check_mode("1600 counts as auto", &m, true);
-    feed_mode(&m, 1401, 5);
-    check_mode("1401 is dead zone", &m, true);
+    feed_mode(&m, 1401, 1);
+    check_mode("1401 is dead zone, drops to manual", &m, false);
+    feed_mode(&m, 1600, 3);
     feed_mode(&m, 1400, 3);
     check_mode("1400 counts as manual", &m, false);
 

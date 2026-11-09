@@ -12,7 +12,8 @@ void mode_switch_frame(ModeSwitch* m, int pulse_us) {
     } else if (pulse_us >= MODE_AUTO_MIN_US) {
         wants_auto = true;
     } else {
-        m->count = 0;   // dead zone: hold the current mode
+        m->autonomous = false;
+        m->count = 0;   // dead zone: fall back to manual
         return;
     }
 
