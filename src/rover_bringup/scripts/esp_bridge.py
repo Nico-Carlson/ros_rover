@@ -4,9 +4,11 @@ import time
 
 import rclpy
 from rclpy.node import Node
+from geometry_msgs.msg import Twist
 from std_msgs.msg import Bool, Float32
 
 from bridge import Bridge, LiftState
+from kinematics import twist_to_steer_deg
 
 
 class EspBridge(Node):
@@ -15,6 +17,10 @@ class EspBridge(Node):
         self.declare_parameter("port", "/dev/ttyUSB0")  # PLACEHOLDER
         self.declare_parameter("baud", 115200)
         self.declare_parameter("lift_timeout", 1.0)  # PLACEHOLDER, matches scan gate
+        self.declare_parameter("wheelbase", 0.686)
+        self.declare_parameter("max_steer_deg", 30.0)  # PLACEHOLDER
+        self.declare_parameter("cmd_rate_hz", 20.0)
+        self.declare_parameter("cmd_timeout", 0.5)  # PLACEHOLDER, seconds
 
         port = self.get_parameter("port").value
         baud = self.get_parameter("baud").value
@@ -26,6 +32,16 @@ class EspBridge(Node):
 
         self.create_timer(0.02, self.on_poll)  # read the serial port at 50 Hz
         self.create_timer(0.1, self.on_lift_timer)  # publish /lift_down at 10 Hz
+        self.wheelbase = self.get_parameter("wheelbase").value
+        self.max_steer_deg = self.get_parameter("max_steer_deg").value
+        self.cmd_timeout = self.get_parameter("cmd_timeout").value
+        self.cmd_v = 0.0
+        self.cmd_wz = 0.0
+        self.cmd_time = None
+        self.create_subscription(Twist, "/cmd_vel", self.on_cmd_vel, 10)
+        self.create_timer(
+            1.0 / self.get_parameter("cmd_rate_hz").value, self.on_send_timer
+        )
         self.get_logger().info(f"esp_bridge reading {port} at {baud}")
 
     def on_poll(self):
@@ -50,6 +66,24 @@ class EspBridge(Node):
         msg = Bool()
         msg.data = self.lift.lift_down(time.time())
         self.lift_pub.publish(msg)
+
+    def on_cmd_vel(self, msg):
+        self.cmd_v = msg.linear.x
+        self.cmd_wz = msg.angular.z
+        self.cmd_time = time.time()
+
+    def on_send_timer(self):
+        fresh = (
+            self.cmd_time is not None
+            and time.time() - self.cmd_time <= self.cmd_timeout
+        )
+        speed = self.cmd_v if fresh else 0.0
+        wz = self.cmd_wz if fresh else 0.0
+        if not (math.isfinite(speed) and math.isfinite(wz)):
+            speed = 0.0
+            wz = 0.0
+        steer = twist_to_steer_deg(speed, wz, self.wheelbase, self.max_steer_deg)
+        self.bridge.send_cmd(speed, steer, 0.0)
 
 
 def main():
