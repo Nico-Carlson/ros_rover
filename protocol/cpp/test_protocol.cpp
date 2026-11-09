@@ -6,6 +6,7 @@
 #include "drive.h"
 #include "reverse_guard.h"
 #include "mode_switch.h"
+#include "brake.h"
 
 static int failures = 0;
 
@@ -237,6 +238,15 @@ static void run_vectors(const char* path) {
     fclose(f);
 }
 
+static void check_brake(const char* name, BrakeMotor got, BrakeMotor expect) {
+    if (got == expect) {
+        printf("PASS  brake %s\n", name);
+    } else {
+        printf("FAIL  brake %s (got %d, expected %d)\n", name, got, expect);
+        failures++;
+    }
+}
+
 int main() {
     check_checksum("CMD,0.30,12.5,0.0", "4D");
     check_checksum("CMD,0.3,12.5,0.0", "7D");
@@ -352,6 +362,25 @@ int main() {
     feed_mode(&m, 1600, 3);
     feed_mode(&m, 1400, 3);
     check_mode("1400 counts as manual", &m, false);
+
+    BrakeState bk;
+    brake_init(&bk);
+    check_brake("want, switch open: extend", brake_step(&bk, true, false, 0), BRAKE_MOTOR_EXTEND);
+    check_brake("want, switch pressed: stop", brake_step(&bk, true, true, 10), BRAKE_MOTOR_STOP);
+    check_brake("applied flag set", (BrakeMotor)bk.applied, (BrakeMotor)1);
+    check_brake("release at 0 ms: retract", brake_step(&bk, false, false, 1000), BRAKE_MOTOR_RETRACT);
+    check_brake("release at 1999 ms: retract", brake_step(&bk, false, false, 2999), BRAKE_MOTOR_RETRACT);
+    check_brake("release at 2000 ms: stop", brake_step(&bk, false, false, 3000), BRAKE_MOTOR_STOP);
+    check_brake("release later: stop", brake_step(&bk, false, false, 9000), BRAKE_MOTOR_STOP);
+
+    brake_init(&bk);
+    brake_step(&bk, false, false, 100);
+    check_brake("brake wanted mid-retract: extend", brake_step(&bk, true, false, 500), BRAKE_MOTOR_EXTEND);
+
+    brake_init(&bk);
+    brake_step(&bk, false, false, 0xFFFFFF00u);
+    check_brake("wrap +100 ms: retract", brake_step(&bk, false, false, 0xFFFFFF00u + 100), BRAKE_MOTOR_RETRACT);
+    check_brake("wrap +2100 ms: stop", brake_step(&bk, false, false, 0xFFFFFF00u + 2100), BRAKE_MOTOR_STOP);
 
     LineReader r;
     line_reader_init(&r);
