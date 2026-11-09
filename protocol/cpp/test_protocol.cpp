@@ -7,6 +7,7 @@
 #include "reverse_guard.h"
 #include "mode_switch.h"
 #include "brake.h"
+#include "tilt.h"
 
 static int failures = 0;
 
@@ -247,6 +248,34 @@ static void check_brake(const char* name, BrakeMotor got, BrakeMotor expect) {
     }
 }
 
+static void check_tilt(const char* name, float ax, float ay, float az,
+                       float exp_roll, float exp_pitch, bool exp_warn, bool exp_danger) {
+    float roll = 0, pitch = 0;
+    TiltState t;
+    tilt_init(&t);
+    bool ok = tilt_angles(ax, ay, az, &roll, &pitch);
+    if (ok) tilt_update(&t, roll, pitch);
+    bool pass = ok && fabsf(roll - exp_roll) < 0.5f && fabsf(pitch - exp_pitch) < 0.5f
+                && t.warning == exp_warn && t.danger == exp_danger;
+    if (pass) {
+        printf("PASS  tilt %s\n", name);
+    } else {
+        printf("FAIL  tilt %s (roll %.1f, pitch %.1f, warn %d, danger %d)\n",
+               name, roll, pitch, t.warning, t.danger);
+        failures++;
+    }
+}
+
+static void check_tilt_rejected(const char* name, float ax, float ay, float az) {
+    float roll, pitch;
+    if (!tilt_angles(ax, ay, az, &roll, &pitch)) {
+        printf("PASS  tilt %s\n", name);
+    } else {
+        printf("FAIL  tilt %s (should be rejected)\n", name);
+        failures++;
+    }
+}
+
 int main() {
     check_checksum("CMD,0.30,12.5,0.0", "4D");
     check_checksum("CMD,0.3,12.5,0.0", "7D");
@@ -381,6 +410,28 @@ int main() {
     brake_step(&bk, false, false, 0xFFFFFF00u);
     check_brake("wrap +100 ms: retract", brake_step(&bk, false, false, 0xFFFFFF00u + 100), BRAKE_MOTOR_RETRACT);
     check_brake("wrap +2100 ms: stop", brake_step(&bk, false, false, 0xFFFFFF00u + 2100), BRAKE_MOTOR_STOP);
+
+    // roll = atan2(ay, az), so ay = az * tan(angle). tan 16 = 0.2867, tan 46 = 1.0355.
+    check_tilt("level", 0, 0, 9.8f, 0, 0, false, false);
+    check_tilt("roll 16: warning only", 0, 9.8f * 0.2867f, 9.8f, 16, 0, true, false);
+    check_tilt("roll 46: warning and danger", 0, 9.8f * 1.0355f, 9.8f, 46, 0, true, true);
+    check_tilt_rejected("NaN input", NAN, 0, 9.8f);
+    check_tilt_rejected("zero vector", 0, 0, 0);
+
+    TiltState th;
+    tilt_init(&th);
+    tilt_update(&th, 16, 0);
+    bool on16 = th.warning;
+    tilt_update(&th, 14, 0);
+    bool on14 = th.warning;
+    tilt_update(&th, 12, 0);
+    bool on12 = th.warning;
+    if (on16 && on14 && !on12) {
+        printf("PASS  tilt hysteresis\n");
+    } else {
+        printf("FAIL  tilt hysteresis (16: %d, 14: %d, 12: %d)\n", on16, on14, on12);
+        failures++;
+    }
 
     LineReader r;
     line_reader_init(&r);
