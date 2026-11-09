@@ -5,6 +5,7 @@
 #include "watchdog.h"
 #include "drive.h"
 #include "reverse_guard.h"
+#include "mode_switch.h"
 
 static int failures = 0;
 
@@ -145,6 +146,19 @@ static void check_guard(const char* name, ReverseGuard* g, float speed, uint32_t
     } else {
         printf("FAIL  guard %s -> dac %d, reverse %d, brake %d (expected %d, %d, %d)\n",
                name, out.throttle_dac, out.reverse, out.brake, dac, rev, brake);
+        failures++;
+    }
+}
+
+static void feed_mode(ModeSwitch* m, int pulse, int times) {
+    for (int i = 0; i < times; i++) mode_switch_frame(m, pulse);
+}
+
+static void check_mode(const char* name, const ModeSwitch* m, bool expect_auto) {
+    if (m->autonomous == expect_auto) {
+        printf("PASS  mode %s\n", name);
+    } else {
+        printf("FAIL  mode %s (autonomous %d, expected %d)\n", name, m->autonomous, expect_auto);
         failures++;
     }
 }
@@ -297,6 +311,44 @@ int main() {
     check_guard("still waiting at 400 ms", &g, 0.3f, 1600, 0, true, true);
     check_guard("flips back to forward", &g, 0.3f, 1700, 0, false, true);
     check_guard("forward throttle after flip", &g, 0.3f, 1800, 51, false, false);
+
+    ModeSwitch m;
+    mode_switch_init(&m);
+    check_mode("starts manual", &m, false);
+    feed_mode(&m, 1700, 2);
+    check_mode("2 auto frames: not yet", &m, false);
+    feed_mode(&m, 1700, 1);
+    check_mode("3rd auto frame switches", &m, true);
+    feed_mode(&m, 1500, 5);
+    check_mode("dead zone holds auto", &m, true);
+    feed_mode(&m, 1300, 2);
+    feed_mode(&m, 1700, 1);
+    feed_mode(&m, 1300, 2);
+    check_mode("interrupted count restarts", &m, true);
+    feed_mode(&m, 1300, 1);
+    check_mode("3rd manual frame switches", &m, false);
+    feed_mode(&m, 1700, 2);
+    feed_mode(&m, 1500, 1);
+    feed_mode(&m, 1700, 2);
+    check_mode("dead zone resets count", &m, false);
+    feed_mode(&m, 1700, 1);
+    check_mode("then 3 in a row switches", &m, true);
+    mode_switch_stale(&m);
+    check_mode("stale forces manual", &m, false);
+    feed_mode(&m, 1700, 2);
+    mode_switch_stale(&m);
+    feed_mode(&m, 1700, 1);
+    check_mode("stale clears the count", &m, false);
+
+    mode_switch_init(&m);
+    feed_mode(&m, 1599, 5);
+    check_mode("1599 is dead zone", &m, false);
+    feed_mode(&m, 1600, 3);
+    check_mode("1600 counts as auto", &m, true);
+    feed_mode(&m, 1401, 5);
+    check_mode("1401 is dead zone", &m, true);
+    feed_mode(&m, 1400, 3);
+    check_mode("1400 counts as manual", &m, false);
 
     LineReader r;
     line_reader_init(&r);
