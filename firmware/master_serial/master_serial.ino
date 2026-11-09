@@ -102,6 +102,16 @@ int rc_clamp_map(int w, int in_min, int in_max, int out_min, int out_max) {
   return out_min + (long)(w - in_min) * (out_max - out_min) / (in_max - in_min);
 }
 
+// Manual throttle from the RC pulse: pulled stick (low pulse) = more throttle.
+// Clamps, so past-the-end pulses saturate instead of dropping to 0.
+int manual_throttle_dac(int pulse_us) {
+  int dac = rc_clamp_map(pulse_us, THROTTLE_PULSE_MIN, THROTTLE_PULSE_MAX, 255, 0);
+  dac = (int)(dac * MANUAL_THROTTLE_SCALE);
+  if (dac < 0) dac = 0;
+  if (dac > 255) dac = 255;
+  return dac;
+}
+
 void setup() {
   Serial.begin(115200);
   line_reader_init(&reader);
@@ -148,6 +158,11 @@ void loop() {
     mode_switch_frame(&mode, mode_w);       // one call per NEW pulse
   }
 
+  // 1c. Manual throttle (computed only; nothing drives a pin yet)
+  int thr_w;
+  int manual_dac = 0;                       // no signal = 0
+  if (rc_read(&rc_throttle, &thr_w)) manual_dac = manual_throttle_dac(thr_w);
+
   // 2. Decide. A stale command means speed 0, which means brake on.
   bool fresh = watchdog_fresh(&watchdog, now, CMD_TIMEOUT_MS);
   float speed = fresh ? cmd_speed : 0.0f;
@@ -168,7 +183,7 @@ void loop() {
 #if DEBUG_PRINT
   if (now - last_print_ms >= 200) {
     last_print_ms = now;
-    Serial.printf("# fresh=%d speed=%.2f dac=%u rev=%d brake=%d settling=%d auto=%d\n",
+    Serial.printf("# fresh=%d speed=%.2f dac=%u rev=%d brake=%d settling=%d auto=%d\n manual=%d manual_dac",
                   fresh, speed, safe.throttle_dac, safe.reverse, safe.brake,
                   guard.settling, mode.autonomous);
   }
