@@ -762,6 +762,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - C++ gap: the ESP side has the checksum, line checker and reader, but NO message builder yet (no C++
   equivalent of `make_line`/`make_lift`), and no field parser (`CMD` fields to numbers). Both are needed before
   the sketch, and both should be added to `vectors.txt`-style tests.
+- Pure-logic modules for the master sketch, all in protocol/cpp/, tested on the PC in test_protocol.cpp (no Arduino calls, UNTESTED ON HARDWARE): watchdog (command freshness, never-seen = stale, millis wrap safe), drive (drive_from_speed: speed to throttle DAC, reverse relay and brake from ONE threshold, so the old “small reverse drives forward” bug cannot happen; 1.5 m/s full scale and 0.05 stop band are PLACEHOLDERS), reverse_guard (stop, settle 500 ms PLACEHOLDER, switch relay, go; no encoders, so it waits a fixed time and cannot confirm the rover stopped), mode_switch (manual at or below 1400 us, auto at or above 1600, between means manual, 3 frames to change, stale = manual, numbers from the old ROS firmware; transmitter channel still unknown). Compile: g++ -Wall -o test_protocol test_protocol.cpp protocol.cpp watchdog.cpp drive.cpp reverse_guard.cpp mode_switch.cpp && ./test_protocol. For the real boards: the master sketch uses all of these except test_protocol.cpp; the sensor sketch only needs protocol.
 - Pi UART options and pin choices are still PLACEHOLDER (see the Firmware approach decisions). Nothing here has
   touched real hardware.
 - The ROS node wrapping `Bridge` should: publish `/lift_down` from `LiftState` on a 10 Hz timer (not per
@@ -770,6 +771,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   rate so the ESP command-timeout watchdog stays satisfied.
 - Test habit: run `python3 -m pytest -q` only from inside `protocol/`; running it from `~/rover_ws` pulls in
   the failing `rover_basics` flake8 lint (976 style errors, unrelated, ignorable).
+- ROS node rover_bringup/scripts/esp_bridge.py (tested on the PC with a socat cable and printf, UNTESTED ON HARDWARE): reads the serial link at 50 Hz, publishes /lift_down from LiftState on a 10 Hz timer (false when the ESP is silent) and /battery_voltage (Float32, placeholder name). Subscribes /cmd_vel and sends CMD at 20 Hz; steering comes from protocol/kinematics.py (atan(wheelbase * wz / v), positive = left, clamped to 30 deg PLACEHOLDER, 0 at or below 0.05 m/s); a /cmd_vel older than 0.5 s (PLACEHOLDER) sends speed 0. CMakeLists.txt installs bridge.py, protocol.py and kinematics.py from ../../protocol/ next to the node (an install(FILES ...) block above ament_package()); package.xml has python3-serial. Not yet done: MODE is not published, /imu and /gps/fix wait for IMU/GPS in the spec, esp_bridge is not in sim_nav (sim-only: it must not run in the sim) and not in a hardware launch file. Also still to add to SPEC.md: steer positive = left.
 
 ### Firmware files
 - `SenserBoardRedone.ino` + `MasterBoardRedone.ino` (each with a `globals.h`): pre-ROS firmware, drove well manually.
@@ -1092,9 +1094,20 @@ Sensor data for the Pi (these will bite the EKF):
 2. Nav2 leftovers (the ultrasonic range layer is done): real max steer angle for
    `minimum_turning_radius`, behavior when `/scan_filtered` goes silent, and Pi CPU check (MPPI, Smac's ~29 s
    configure).
-3. Panel status label (subscribe to /patrol_status), stuck detector and recovery (needs a second signal besides rf2o speed), the remaining abort causes and a retest of the inflation sliders, then the ESP32 firmware and Pi bridge. The pre-ROS firmware is reviewed; the old ROS firmware is reviewed too; the rebuild comes next (rules and bench tests are in "Pre-ROS firmware review" and "Old micro-ROS firmware review")
+3. Firmware and hardware link. DONE on the PC (all UNTESTED ON HARDWARE): serial protocol (Python + C++),
+   C++ builders and `CMD` parser, pure-logic modules (`watchdog`, `drive`, `reverse_guard`, `mode_switch`),
+   `kinematics.py`, the `esp_bridge` ROS node (both directions), and a first master sketch
+   (`firmware/master_serial`, no motors). Remaining, in order:
+   a. Master sketch: RC reads, mode switch, throttle/brake/reverse outputs behind `ENABLE_OUTPUTS`, `MODE`
+      reply; every uncertain value in one marked `FILL IN` block at the top.
+   b. Sensor sketch: `LIFT` (limit-switch levels), `BAT`, tilt, same `FILL IN` block.
+   c. Pi side: publish `MODE`, add `IMU`/`GPS`/`DANGER` to the spec, a hardware launch file (without the
+      sim-only nodes), then the bench checklist in "Pre-ROS firmware review".
+4. Stuck detector and recovery (needs a second signal besides rf2o speed), the remaining roaming abort
+   causes, and a retest of the inflation sliders.
 
-- New chat: paste DEVLOG.md first, plus the file being edited.
+- New chat: paste DEVLOG.md first, plus the file being edited. For the firmware also paste `protocol/SPEC.md`
+  and `protocol/cpp/protocol.h`.
 
 
 ## Ideas for later (not committed to)
