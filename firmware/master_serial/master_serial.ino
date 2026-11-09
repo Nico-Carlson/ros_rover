@@ -46,6 +46,16 @@ ReverseGuard guard;
 #define THROTTLE_PULSE_MAX 1517
 #define STEER_PULSE_MIN   1000
 #define STEER_PULSE_MAX   2000
+
+// RC brake request from ch2. PLACEHOLDER threshold: the old firmware used > 2000 us,
+// which sits at the edge of a normal channel. Measure your transmitter's real max.
+#define BRAKE_PULSE_MIN 2000
+
+// Loss of signal = brake ON (the old firmware released it, which coasts).
+bool manual_brake_wanted(bool have_signal, int pulse_us) {
+  if (!have_signal) return true;
+  return pulse_us > BRAKE_PULSE_MIN;
+}
 // ===================================================
 
 float cmd_speed = 0, cmd_steer = 0, cmd_lift = 0;   // last good command
@@ -159,9 +169,11 @@ void loop() {
   }
 
   // 1c. Manual throttle (computed only; nothing drives a pin yet)
-  int thr_w;
-  int manual_dac = 0;                       // no signal = 0
-  if (rc_read(&rc_throttle, &thr_w)) manual_dac = manual_throttle_dac(thr_w);
+  int thr_w = 0;
+  bool thr_ok = rc_read(&rc_throttle, &thr_w);
+  int manual_dac = thr_ok ? manual_throttle_dac(thr_w) : 0;
+  bool manual_brake = manual_brake_wanted(thr_ok, thr_w);
+  if (manual_brake) manual_dac = 0;          // brake always beats throttle
 
   // 2. Decide. A stale command means speed 0, which means brake on.
   bool fresh = watchdog_fresh(&watchdog, now, CMD_TIMEOUT_MS);
@@ -183,7 +195,7 @@ void loop() {
 #if DEBUG_PRINT
   if (now - last_print_ms >= 200) {
     last_print_ms = now;
-    Serial.printf("# fresh=%d speed=%.2f dac=%u rev=%d brake=%d settling=%d auto=%d\n manual=%d manual_dac",
+    Serial.printf("# fresh=%d speed=%.2f dac=%u rev=%d brake=%d settling=%d auto=%d\n manual=%d manual_dac mbrake=%d manual_brake",
                   fresh, speed, safe.throttle_dac, safe.reverse, safe.brake,
                   guard.settling, mode.autonomous);
   }
