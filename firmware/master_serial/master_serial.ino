@@ -11,8 +11,6 @@ LineReader reader;
 CommandWatchdog watchdog;
 ReverseGuard guard;
 
-float cmd_speed = 0, cmd_steer = 0, cmd_lift = 0;   // last good command
-uint32_t last_print_ms = 0;
 
 // ===================== FILL IN =====================
 // Every uncertain value lives here. Check against the real wiring.
@@ -37,6 +35,10 @@ uint32_t last_print_ms = 0;
 #define PIN_LIFT_A        26    // both HIGH = stop
 #define PIN_LIFT_B        27
 // ===================================================
+
+float cmd_speed = 0, cmd_steer = 0, cmd_lift = 0;   // last good command
+uint32_t last_print_ms = 0;
+uint32_t last_mode_ms = 0;
 
 ModeSwitch mode;
 
@@ -116,6 +118,14 @@ void loop() {
   drive_from_speed(speed, &want);
   reverse_guard_step(&guard, &want, now, REVERSE_SETTLE_MS, &safe);
 
+  // 3. Tell the Pi our state at a steady 10 Hz.
+  if (now - last_mode_ms >= 100) {
+    last_mode_ms = now;
+    char out[40];
+    size_t n = protocol_make_mode(mode.autonomous, false, false, safe.brake != 0,
+                                  out, sizeof(out));
+    if (n > 0) Serial.write((const uint8_t*)out, n);
+  }
   // (Later: apply `safe` to the DAC, relay and brake pins here.)
 
 #if DEBUG_PRINT
