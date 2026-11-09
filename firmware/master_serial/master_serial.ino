@@ -5,6 +5,7 @@
 #include "mode_switch.h"
 #include "rc_channel.h"
 #include "brake.h"
+#include <ESP32Servo.h>
 
 #define CMD_TIMEOUT_MS 500   // PLACEHOLDER: stop if no fresh CMD for this long
 #define DEBUG_PRINT 1        // set to 0 for real runs
@@ -60,6 +61,10 @@ bool manual_brake_wanted(bool have_signal, int pulse_us) {
 #define BRAKE_RETRACT_PIN PIN_BRAKE_RPWM
 
 #define REVERSE_PULSE_MIN 2000   // PLACEHOLDER: old firmware toggled when ch7 pulse > 2000 us
+
+#define STEER_AUTO_MAX_DEG  30.0f   // PLACEHOLDER: real max steer angle never measured
+#define STEER_AUTO_SIGN     1       // +1: higher pulse = left. UNKNOWN, flip to -1 if inverted
+#define STEER_CENTER_US     1500
 // ===================================================
 
 float cmd_speed = 0, cmd_steer = 0, cmd_lift = 0;   // last good command
@@ -74,6 +79,7 @@ CommandWatchdog watchdog;
 ReverseGuard guard;
 ModeSwitch mode;
 BrakeState brake;
+Servo steer_servo;
 
 #define RC_STALE_MS 100          // no new pulse for this long = receiver gone
 portMUX_TYPE rcMux = portMUX_INITIALIZER_UNLOCKED;
@@ -133,6 +139,15 @@ int manual_throttle_dac(int pulse_us) {
   return dac;
 }
 
+// Auto: degrees (+ = left) to servo pulse. Clamped, NaN gives center.
+int auto_steer_us(float deg) {
+  if (deg != deg) return STEER_CENTER_US;
+  if (deg >  STEER_AUTO_MAX_DEG) deg =  STEER_AUTO_MAX_DEG;
+  if (deg < -STEER_AUTO_MAX_DEG) deg = -STEER_AUTO_MAX_DEG;
+  float frac = (deg / STEER_AUTO_MAX_DEG) * STEER_AUTO_SIGN;   // -1..+1
+  return STEER_CENTER_US + (int)(frac * 500.0f);
+}
+
 void setup() {
   Serial.begin(115200);
   line_reader_init(&reader);
@@ -161,6 +176,9 @@ void setup() {
   pinMode(PIN_BRAKE_LIMIT, INPUT_PULLUP);
   pinMode(PIN_REVERSE_RELAY, OUTPUT); digitalWrite(PIN_REVERSE_RELAY, LOW);
   dacWrite(PIN_DAC_THROTTLE, 0);
+
+  steer_servo.attach(PIN_STEER_SERVO, 1000, 2000);
+  steer_servo.writeMicroseconds(STEER_CENTER_US);
 #endif
 }
 
@@ -205,6 +223,12 @@ void loop() {
   if (rev_pressed && !rev_prev_pressed) manual_reverse = !manual_reverse;
   rev_prev_pressed = rev_pressed;
 
+  // 1e. Steering target (microseconds).
+  int steer_w = 0;
+  bool steer_ok = rc_read(&rc_steer, &steer_w);
+  int manual_steer_us = steer_ok ? rc_clamp_map(steer_w, STEER_PULSE_MIN, STEER_PULSE_MAX, 1000, 2000)
+                                 : STEER_CENTER_US;
+
   // 2. Choose the source, then run it through the ONE reverse guard.
   bool fresh = watchdog_fresh(&watchdog, now, CMD_TIMEOUT_MS);
   float speed = fresh ? cmd_speed : 0.0f;
@@ -235,6 +259,8 @@ void loop() {
   bool final_brake = safe.brake;
 
   // 5. Drive the outputs. UNTESTED ON HARDWARE.
+  int steer_us = use_auto ? auto_steer_us(cmd_steer) : manual_steer_us;
+
 #if ENABLE_OUTPUTS
   dacWrite(PIN_DAC_THROTTLE, final_dac);
   digitalWrite(PIN_REVERSE_RELAY, final_rev ? HIGH : LOW);
@@ -242,14 +268,15 @@ void loop() {
   BrakeMotor bm = brake_step(&brake, final_brake, limit_pressed, now);
   digitalWrite(BRAKE_EXTEND_PIN,  bm == BRAKE_MOTOR_EXTEND  ? HIGH : LOW);
   digitalWrite(BRAKE_RETRACT_PIN, bm == BRAKE_MOTOR_RETRACT ? HIGH : LOW);
+  steer_servo.writeMicroseconds(steer_us);
 #endif
 
 #if DEBUG_PRINT
   if (now - last_print_ms >= 200) {
     last_print_ms = now;
-    Serial.printf("# fresh=%d speed=%.2f dac=%u rev=%d brake=%d settling=%d auto=%d\n manual=%d manual_dac mbrake=%d manual_brake",
+    Serial.printf("# fresh=%d speed=%.2f dac=%u rev=%d brake=%d settling=%d auto=%d manual_dac=%d mbrake=%d steer=%d\n",
                   fresh, speed, safe.throttle_dac, safe.reverse, safe.brake,
-                  guard.settling, mode.autonomous);
+                  guard.settling, mode.autonomous, manual_dac, manual_brake, steer_us);
   }
 #endif
 }
