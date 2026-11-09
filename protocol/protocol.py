@@ -40,16 +40,9 @@ class LineReader:
         return lines
 
 
-reader = LineReader()
-
-
 def split_body(body):
     parts = body.split(",")
     return parts[0], parts[1:]
-
-
-a = make_line("CMD", 0.3, 12.5, 0.0)
-b = make_line("BAT", 12.4)
 
 
 def make_cmd(speed, steer_deg, lift):
