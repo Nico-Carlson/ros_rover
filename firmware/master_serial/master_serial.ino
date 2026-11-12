@@ -23,7 +23,7 @@
 #define PIN_RC_THROTTLE  32     // ch2: throttle + brake
 #define PIN_RC_LIFT       4     // ch6
 #define PIN_RC_REVERSE   34     // ch7
-#define PIN_RC_MODE      22     // manual/auto switch. Transmitter channel UNKNOWN
+#define PIN_RC_MODE      22     // ch5 manual/auto switch.
 
 // Outputs
 #define PIN_DAC_THROTTLE  25    // DAC1
@@ -43,14 +43,14 @@
 
 // RC pulse ranges in microseconds. PLACEHOLDERS: measure each channel on the bench
 // (min, neutral, max) and fix these numbers.
-#define THROTTLE_PULSE_MIN 980    // pre-ROS firmware value; stick pulled = LOWER pulse = more throttle
-#define THROTTLE_PULSE_MAX 1517
+#define THROTTLE_PULSE_MIN 1010   // full pull reads 1001
+#define THROTTLE_PULSE_MAX 1500   // rest 1554 and failsafe 1514 both give DAC 0
 #define STEER_PULSE_MIN   1000
 #define STEER_PULSE_MAX   2000
 
 // RC brake request from ch2. PLACEHOLDER threshold: the old firmware used > 2000 us,
 // which sits at the edge of a normal channel. Measure your transmitter's real max.
-#define BRAKE_PULSE_MIN 2000
+#define BRAKE_PULSE_MIN    1900   // full push reads 2061
 
 // Loss of signal = brake ON (the old firmware released it, which coasts).
 bool manual_brake_wanted(bool have_signal, int pulse_us) {
@@ -62,7 +62,7 @@ bool manual_brake_wanted(bool have_signal, int pulse_us) {
 #define BRAKE_EXTEND_PIN  PIN_BRAKE_LPWM
 #define BRAKE_RETRACT_PIN PIN_BRAKE_RPWM
 
-#define REVERSE_PULSE_MIN 2000   // PLACEHOLDER: old firmware toggled when ch7 pulse > 2000 us
+#define REVERSE_PULSE_MIN  1700   // off 979, failsafe 1512, on 2045
 
 #define STEER_AUTO_MAX_DEG  30.0f   // PLACEHOLDER: real max steer angle never measured
 #define STEER_AUTO_SIGN     1       // +1: higher pulse = left. UNKNOWN, flip to -1 if inverted
@@ -236,7 +236,7 @@ void loop() {
   safety_link_status(&safety, now, SAFETY_TIMEOUT_MS, &danger, &warning, &link_stale);
 
   // 1b. Mode switch
-  int mode_w;
+  int mode_w = 0;
   if (!rc_read(&rc_mode, &mode_w)) {
     mode_switch_stale(&mode);               // no signal = manual
   } else if (rc_mode.frames != mode_frames_seen) {
@@ -322,6 +322,8 @@ void loop() {
                   fresh, speed, safe.throttle_dac, safe.reverse, safe.brake,
                   guard.settling, mode.autonomous, manual_dac, manual_brake, steer_us, (int)lift_cmd,
                   danger, warning, link_stale);
+    Serial.printf("# pulses us: steer=%d thr=%d lift=%d rev=%d mode=%d (0 = no signal)\n",
+              steer_w, thr_w, lift_w, rev_w, mode_w);
   }
 #endif
 }

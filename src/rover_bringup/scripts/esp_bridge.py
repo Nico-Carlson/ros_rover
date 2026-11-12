@@ -9,6 +9,7 @@ from std_msgs.msg import Bool, Float32
 
 from bridge import Bridge, LiftState
 from kinematics import twist_to_steer_deg
+from protocol import parse_mode
 
 
 class EspBridge(Node):
@@ -21,6 +22,7 @@ class EspBridge(Node):
         self.declare_parameter("max_steer_deg", 30.0)  # PLACEHOLDER
         self.declare_parameter("cmd_rate_hz", 20.0)
         self.declare_parameter("cmd_timeout", 0.5)  # PLACEHOLDER, seconds
+        self.declare_parameter("mode_timeout", 0.5)  # PLACEHOLDER, seconds
 
         port = self.get_parameter("port").value
         baud = self.get_parameter("baud").value
@@ -29,6 +31,16 @@ class EspBridge(Node):
 
         self.lift_pub = self.create_publisher(Bool, "/lift_down", 10)
         self.bat_pub = self.create_publisher(Float32, "/battery_voltage", 10)
+
+        self.mode_timeout = self.get_parameter("mode_timeout").value
+        self.mode = (False, False, False, False)  # autonomous, danger, warning, brake
+        self.mode_time = None
+        self.auto_pub = self.create_publisher(Bool, "/rover/autonomous", 10)
+        self.danger_pub = self.create_publisher(Bool, "/rover/danger", 10)
+        self.warning_pub = self.create_publisher(Bool, "/rover/warning", 10)
+        self.brake_pub = self.create_publisher(Bool, "/rover/brake", 10)
+        self.link_pub = self.create_publisher(Bool, "/rover/esp_link_ok", 10)
+        self.create_timer(0.1, self.on_mode_timer)  # publish the MODE topics at 10 Hz
 
         self.create_timer(0.02, self.on_poll)  # read the serial port at 50 Hz
         self.create_timer(0.1, self.on_lift_timer)  # publish /lift_down at 10 Hz
@@ -48,6 +60,11 @@ class EspBridge(Node):
         for kind, fields in self.bridge.poll_with_lift(self.lift):
             if kind == "BAT":
                 self.publish_battery(fields)
+            elif kind == "MODE":
+                parsed = parse_mode(fields)
+                if parsed is not None:
+                    self.mode = parsed
+                    self.mode_time = time.time()
 
     def publish_battery(self, fields):
         if len(fields) != 1:
@@ -66,6 +83,25 @@ class EspBridge(Node):
         msg = Bool()
         msg.data = self.lift.lift_down(time.time())
         self.lift_pub.publish(msg)
+
+    def publish_bool(self, pub, value):
+        msg = Bool()
+        msg.data = bool(value)
+        pub.publish(msg)
+
+    def on_mode_timer(self):
+        link_ok = (
+            self.mode_time is not None
+            and time.time() - self.mode_time <= self.mode_timeout
+        )
+        autonomous, danger, warning, brake = self.mode
+        if not link_ok:
+            autonomous = False  # silent ESP: do not claim the rover is in auto
+        self.publish_bool(self.auto_pub, autonomous)
+        self.publish_bool(self.danger_pub, danger)
+        self.publish_bool(self.warning_pub, warning)
+        self.publish_bool(self.brake_pub, brake)
+        self.publish_bool(self.link_pub, link_ok)
 
     def on_cmd_vel(self, msg):
         self.cmd_v = msg.linear.x

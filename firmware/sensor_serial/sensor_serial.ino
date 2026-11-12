@@ -19,10 +19,12 @@
 // MPU6050 mounting. UNKNOWN: the old firmware's offsets suggested the board is mounted flipped.
 // Level should read roll ~0, pitch ~0. If it reads roll ~180, set MPU_FLIP_Z to -1.
 #define MPU_SIGN_X  1.0f
-#define MPU_SIGN_Y  1.0f
-#define MPU_SIGN_Z  1.0f
+#define MPU_SIGN_Y  -1.0f
+#define MPU_SIGN_Z  -1.0f
 #define MPU_DEAD_MS 350      // no good reading for this long = danger (a dead sensor is not "level")
 #define MPU_READ_MS 20       // 50 Hz
+#define MPU_ROLL_OFFSET_DEG  13.0f   // set to the roll reading at rest after step 1
+#define MPU_PITCH_OFFSET_DEG -1.0f   // set to the pitch reading at rest after step 1
 
 // Safety link to the master: one-way, sensor TX -> master RX, plus a shared ground.
 #define PIN_LINK_RX    16   // unused (one-way), but the pins have to be given
@@ -95,6 +97,8 @@ void loop() {
     float roll, pitch;
     if (tilt_angles(a.acceleration.x * MPU_SIGN_X, a.acceleration.y * MPU_SIGN_Y,
                     a.acceleration.z * MPU_SIGN_Z, &roll, &pitch)) {
+      roll  -= MPU_ROLL_OFFSET_DEG;
+      pitch -= MPU_PITCH_OFFSET_DEG;
       tilt_update(&tilt, roll, pitch);
       last_good_mpu_ms = now;
     }
