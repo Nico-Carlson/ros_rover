@@ -8,6 +8,7 @@
 #include "mode_switch.h"
 #include "brake.h"
 #include "tilt.h"
+#include "safety_link.h"
 
 static int failures = 0;
 
@@ -464,6 +465,195 @@ int main() {
     check_reader("recovers after overflow", n, 1, body, "CMD,0.3,12.5,0.0");
 
     run_vectors("../vectors.txt");
+
+    // --- safety_crc8 ---
+    {
+        // standard CRC-8 (poly 0x07, init 0, no final xor) check value
+        const uint8_t check[] = {'1','2','3','4','5','6','7','8','9'};
+        if (safety_crc8(check, 9) != 0xF4)
+            printf("FAIL safety_crc8: check string\n");
+
+        // nothing to hash leaves the starting value
+        if (safety_crc8(check, 0) != 0x00)
+            printf("FAIL safety_crc8: empty input\n");
+
+        // one byte of 0x01 shifts out and picks up the polynomial: 0x07
+        const uint8_t one[] = {0x01};
+        if (safety_crc8(one, 1) != 0x07)
+            printf("FAIL safety_crc8: single byte 0x01\n");
+
+        // changing any byte must change the CRC
+        const uint8_t a[] = {0x05, 0x01};
+        const uint8_t b[] = {0x05, 0x02};
+        if (safety_crc8(a, 2) == safety_crc8(b, 2))
+            printf("FAIL safety_crc8: different data gave the same CRC\n");
+    }
+
+    // --- safety_make_packet ---
+    {
+        uint8_t p[SAFETY_PACKET_LEN];
+
+        safety_make_packet(7, false, false, p);
+        if (p[0] != 0xA5) printf("FAIL safety_make_packet: magic\n");
+        if (p[1] != 7)    printf("FAIL safety_make_packet: seq\n");
+        if (p[2] != 0x00) printf("FAIL safety_make_packet: no flags\n");
+        if (p[3] != safety_crc8(&p[1], 2))
+            printf("FAIL safety_make_packet: crc\n");
+
+        safety_make_packet(7, true, false, p);
+        if (p[2] != 0x01) printf("FAIL safety_make_packet: danger only\n");
+
+        safety_make_packet(7, false, true, p);
+        if (p[2] != 0x02) printf("FAIL safety_make_packet: warning only\n");
+
+        safety_make_packet(7, true, true, p);
+        if (p[2] != 0x03) printf("FAIL safety_make_packet: both flags\n");
+        if (p[3] != safety_crc8(&p[1], 2))
+            printf("FAIL safety_make_packet: crc with both flags\n");
+
+        // the CRC must change when a flag changes
+        uint8_t q[SAFETY_PACKET_LEN];
+        safety_make_packet(7, false, false, p);
+        safety_make_packet(7, true,  false, q);
+        if (p[3] == q[3]) printf("FAIL safety_make_packet: crc ignores flags\n");
+
+        // sequence wraps cleanly at 255 -> 0
+        safety_make_packet(255, false, false, p);
+        if (p[1] != 255) printf("FAIL safety_make_packet: seq 255\n");
+        safety_make_packet((uint8_t)(255 + 1), false, false, p);
+        if (p[1] != 0)   printf("FAIL safety_make_packet: seq wrap\n");
+    }
+
+    // --- safety_reader ---
+    {
+        SafetyReader r;
+        uint8_t p[SAFETY_PACKET_LEN];
+        bool d, w;
+
+        // a clean packet, fed one byte at a time
+        safety_reader_init(&r);
+        safety_make_packet(3, true, false, p);
+        d = false; w = true;
+        if (safety_reader_push(&r, p[0], &d, &w)) printf("FAIL reader: done after byte 1\n");
+        if (safety_reader_push(&r, p[1], &d, &w)) printf("FAIL reader: done after byte 2\n");
+        if (safety_reader_push(&r, p[2], &d, &w)) printf("FAIL reader: done after byte 3\n");
+        if (!safety_reader_push(&r, p[3], &d, &w)) printf("FAIL reader: not done after byte 4\n");
+        if (!d || w) printf("FAIL reader: flags danger-only\n");
+
+        // both flags decode
+        safety_make_packet(4, true, true, p);
+        bool got = false;
+        for (int i = 0; i < SAFETY_PACKET_LEN; i++) got = safety_reader_push(&r, p[i], &d, &w);
+        if (!got || !d || !w) printf("FAIL reader: both flags\n");
+
+        // garbage before a packet is skipped
+        safety_reader_init(&r);
+        safety_make_packet(5, false, true, p);
+        safety_reader_push(&r, 0x00, &d, &w);
+        safety_reader_push(&r, 0x13, &d, &w);
+        got = false;
+        for (int i = 0; i < SAFETY_PACKET_LEN; i++) got = safety_reader_push(&r, p[i], &d, &w);
+        if (!got || d || !w) printf("FAIL reader: garbage before packet\n");
+
+        // bad CRC: rejected, outputs untouched
+        safety_reader_init(&r);
+        safety_make_packet(6, false, false, p);
+        p[3] ^= 0xFF;
+        d = true; w = false;
+        got = false;
+        for (int i = 0; i < SAFETY_PACKET_LEN; i++) got = safety_reader_push(&r, p[i], &d, &w);
+        if (got) printf("FAIL reader: accepted bad CRC\n");
+        if (!d || w) printf("FAIL reader: bad CRC changed outputs\n");
+
+        // recovers after a bad packet
+        safety_make_packet(7, true, false, p);
+        got = false;
+        for (int i = 0; i < SAFETY_PACKET_LEN; i++) got = safety_reader_push(&r, p[i], &d, &w);
+        if (!got || !d || w) printf("FAIL reader: no recovery after bad packet\n");
+
+        // resync: a truncated packet (A5 05) then a full good one.
+        // The extra magic byte inside the bad window must not be lost.
+        safety_reader_init(&r);
+        safety_make_packet(9, true, true, p);
+        safety_reader_push(&r, 0xA5, &d, &w);
+        safety_reader_push(&r, 0x05, &d, &w);
+        got = false;
+        for (int i = 0; i < SAFETY_PACKET_LEN; i++) got = safety_reader_push(&r, p[i], &d, &w);
+        if (!got || !d || !w) printf("FAIL reader: resync after truncated packet\n");
+
+        // two packets back to back
+        safety_reader_init(&r);
+        int count = 0;
+        for (uint8_t s = 10; s < 12; s++) {
+            safety_make_packet(s, false, false, p);
+            for (int i = 0; i < SAFETY_PACKET_LEN; i++)
+                if (safety_reader_push(&r, p[i], &d, &w)) count++;
+        }
+        if (count != 2) printf("FAIL reader: back to back packets\n");
+    }
+
+    // --- safety_link ---
+    {
+        SafetyLink s;
+        uint8_t p[SAFETY_PACKET_LEN];
+        bool d, w, st;
+
+        // nothing heard yet: stale, but NOT danger
+        safety_link_init(&s);
+        safety_link_status(&s, 1000, SAFETY_TIMEOUT_MS, &d, &w, &st);
+        if (d || w) printf("FAIL link: no packet should not be danger\n");
+        if (!st)    printf("FAIL link: no packet should be stale\n");
+
+        // good safe packet: fresh, no flags
+        safety_make_packet(1, false, false, p);
+        for (int i = 0; i < SAFETY_PACKET_LEN; i++) safety_link_push(&s, p[i], 1000);
+        safety_link_status(&s, 1100, SAFETY_TIMEOUT_MS, &d, &w, &st);
+        if (d || w || st) printf("FAIL link: fresh safe packet\n");
+
+        // edge of the timeout: 350 ms is fresh, 351 is stale
+        safety_link_status(&s, 1350, SAFETY_TIMEOUT_MS, &d, &w, &st);
+        if (st) printf("FAIL link: 350 ms should be fresh\n");
+        safety_link_status(&s, 1351, SAFETY_TIMEOUT_MS, &d, &w, &st);
+        if (!st) printf("FAIL link: 351 ms should be stale\n");
+        if (d)   printf("FAIL link: stale must not set danger\n");
+
+        // danger flag arrives, warning stays separate
+        safety_make_packet(2, true, false, p);
+        for (int i = 0; i < SAFETY_PACKET_LEN; i++) safety_link_push(&s, p[i], 6000);
+        safety_link_status(&s, 6050, SAFETY_TIMEOUT_MS, &d, &w, &st);
+        if (!d || w || st) printf("FAIL link: danger flag\n");
+
+        // danger HOLDS through silence, even when stale
+        safety_link_status(&s, 60000, SAFETY_TIMEOUT_MS, &d, &w, &st);
+        if (!d)  printf("FAIL link: danger should hold when stale\n");
+        if (!st) printf("FAIL link: should be stale\n");
+
+        // a later safe packet clears it
+        safety_make_packet(3, false, false, p);
+        for (int i = 0; i < SAFETY_PACKET_LEN; i++) safety_link_push(&s, p[i], 61000);
+        safety_link_status(&s, 61010, SAFETY_TIMEOUT_MS, &d, &w, &st);
+        if (d || st) printf("FAIL link: safe packet should clear danger\n");
+
+        // a bad-CRC packet changes nothing: not the flags, not the timer
+        safety_link_init(&s);
+        safety_make_packet(1, true, false, p);
+        for (int i = 0; i < SAFETY_PACKET_LEN; i++) safety_link_push(&s, p[i], 100);
+        safety_make_packet(2, false, false, p);
+        p[3] ^= 0xFF;
+        for (int i = 0; i < SAFETY_PACKET_LEN; i++) safety_link_push(&s, p[i], 400);
+        safety_link_status(&s, 460, SAFETY_TIMEOUT_MS, &d, &w, &st);
+        if (!d)  printf("FAIL link: bad packet cleared danger\n");
+        if (!st) printf("FAIL link: bad packet refreshed the timer\n");
+
+        // millis() wrap: last packet just before 2^32, checked just after
+        safety_link_init(&s);
+        safety_make_packet(1, false, false, p);
+        for (int i = 0; i < SAFETY_PACKET_LEN; i++) safety_link_push(&s, p[i], 0xFFFFFF00u);
+        safety_link_status(&s, 0x00000050u, SAFETY_TIMEOUT_MS, &d, &w, &st);  // ~336 ms later
+        if (st) printf("FAIL link: wrap, should be fresh\n");
+        safety_link_status(&s, 0x00000100u, SAFETY_TIMEOUT_MS, &d, &w, &st);  // ~512 ms later
+        if (!st) printf("FAIL link: wrap, should be stale\n");
+    }
 
     return failures;
 }

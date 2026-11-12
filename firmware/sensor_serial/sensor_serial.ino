@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <Adafruit_MPU6050.h>
 #include "tilt.h"
+#include "safety_link.h"
 
 // ===================== FILL IN =====================
 // Every uncertain value lives here. Check against the real wiring.
@@ -22,6 +23,12 @@
 #define MPU_SIGN_Z  1.0f
 #define MPU_DEAD_MS 350      // no good reading for this long = danger (a dead sensor is not "level")
 #define MPU_READ_MS 20       // 50 Hz
+
+// Safety link to the master: one-way, sensor TX -> master RX, plus a shared ground.
+#define PIN_LINK_RX    16   // unused (one-way), but the pins have to be given
+#define PIN_LINK_TX    17   // wire to the master's pin 16
+#define LINK_BAUD      115200   // PLACEHOLDER: must match the master
+#define SAFETY_SEND_MS 100      // 10 Hz
 // ===================================================
 
 // NOTE: Serial (UART0) is the Pi link. Never print debug text on it.
@@ -35,8 +42,12 @@ uint32_t last_mpu_ms = 0;
 uint32_t last_good_mpu_ms = 0;
 uint32_t last_mpu_try_ms = 0;
 
+uint8_t safety_seq = 0;
+uint32_t last_safety_ms = 0;
+
 void setup() {
   Serial.begin(115200);
+  Serial1.begin(LINK_BAUD, SERIAL_8N1, PIN_LINK_RX, PIN_LINK_TX);
   pinMode(PIN_LIFT_LOWER_LIMIT, INPUT_PULLUP);
   pinMode(PIN_LIFT_UPPER_LIMIT, INPUT_PULLUP);
 
@@ -91,4 +102,12 @@ void loop() {
   bool sensor_dead = (uint32_t)(now - last_good_mpu_ms) > MPU_DEAD_MS;
   bool tilt_danger = tilt.danger || sensor_dead;
   bool tilt_warning = tilt.warning; 
+
+  // Safety packet to the master at 10 Hz.
+  if (now - last_safety_ms >= SAFETY_SEND_MS) {
+    last_safety_ms = now;
+    uint8_t pkt[SAFETY_PACKET_LEN];
+    safety_make_packet(safety_seq++, tilt_danger, tilt_warning, pkt);
+    Serial1.write(pkt, SAFETY_PACKET_LEN);
+  }
 }
