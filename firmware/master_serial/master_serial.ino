@@ -277,6 +277,7 @@ void loop() {
     want.brake = manual_brake;
   }
   if (manual_brake) { want.throttle_dac = 0; want.brake = true; }   // brake always wins
+    if (danger && use_auto) { want.throttle_dac = 0; want.brake = true; }   // danger stops AUTONOMOUS driving only
   reverse_guard_step(&guard, &want, now, REVERSE_SETTLE_MS, &safe);
 
   // 3. Tell the Pi our state at a steady 10 Hz.
