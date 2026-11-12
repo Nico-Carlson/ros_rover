@@ -6,6 +6,7 @@
 #include "rc_channel.h"
 #include "brake.h"
 #include "lift_cmd.h"
+#include "safety_link.h"
 #include <ESP32Servo.h>
 
 #define CMD_TIMEOUT_MS 500   // PLACEHOLDER: stop if no fresh CMD for this long
@@ -69,6 +70,12 @@ bool manual_brake_wanted(bool have_signal, int pulse_us) {
 
 #define LIFT_UP_PULSE_MIN    1800   // old firmware: ch6 > 1800 = up
 #define LIFT_DOWN_PULSE_MAX  1400   // old firmware: ch6 < 1400 = down
+                                    
+// Safety link from the sensor board: one-way, sensor TX -> this RX, shared ground.
+#define PIN_LINK_RX  16   // wire to the sensor board's pin 17
+#define PIN_LINK_TX  17   // unused (one-way), but the pins have to be given
+#define LINK_BAUD    115200   // PLACEHOLDER: must match the sensor sketch                                    
+
 // ===================================================
 
 float cmd_speed = 0, cmd_steer = 0, cmd_lift = 0;   // last good command
@@ -79,6 +86,7 @@ bool manual_reverse = false;     // direction chosen with the ch7 switch
 bool rev_prev_pressed = false;
 
 LineReader reader;
+SafetyLink safety;
 CommandWatchdog watchdog;
 ReverseGuard guard;
 ModeSwitch mode;
@@ -168,6 +176,9 @@ void setup() {
   watchdog_init(&watchdog);
   reverse_guard_init(&guard);
 
+  safety_link_init(&safety);
+  Serial1.begin(LINK_BAUD, SERIAL_8N1, PIN_LINK_RX, PIN_LINK_TX);
+
   mode_switch_init(&mode);
   pinMode(PIN_RC_MODE, INPUT);
   pinMode(PIN_RC_STEER, INPUT);
@@ -217,6 +228,13 @@ void loop() {
     }
   }
 
+  // 1a. Safety link: feed every waiting byte, then read the current state.
+  while (Serial1.available() > 0) {
+    safety_link_push(&safety, (uint8_t)Serial1.read(), now);
+  }
+  bool danger, warning, link_stale;
+  safety_link_status(&safety, now, SAFETY_TIMEOUT_MS, &danger, &warning, &link_stale);
+
   // 1b. Mode switch
   int mode_w;
   if (!rc_read(&rc_mode, &mode_w)) {
@@ -265,7 +283,7 @@ void loop() {
   if (now - last_mode_ms >= 100) {
     last_mode_ms = now;
     char out[40];
-    size_t n = protocol_make_mode(mode.autonomous, false, false, safe.brake != 0,
+    size_t n = protocol_make_mode(mode.autonomous, danger, warning, safe.brake != 0,
                                   out, sizeof(out));
     if (n > 0) Serial.write((const uint8_t*)out, n);
   }
@@ -299,9 +317,10 @@ void loop() {
 #if DEBUG_PRINT
   if (now - last_print_ms >= 200) {
     last_print_ms = now;
-    Serial.printf("# fresh=%d speed=%.2f dac=%u rev=%d brake=%d settling=%d auto=%d manual_dac=%d mbrake=%d steer=%d\n lift=%d",
+    Serial.printf("# fresh=%d speed=%.2f dac=%u rev=%d brake=%d settling=%d auto=%d manual_dac=%d mbrake=%d steer=%d lift=%d danger=%d warn=%d stale=%d\n",
                   fresh, speed, safe.throttle_dac, safe.reverse, safe.brake,
-                  guard.settling, mode.autonomous, manual_dac, manual_brake, steer_us, (int)lift_cmd);
+                  guard.settling, mode.autonomous, manual_dac, manual_brake, steer_us, (int)lift_cmd,
+                  danger, warning, link_stale);
   }
 #endif
 }
