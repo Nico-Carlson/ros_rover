@@ -4,17 +4,20 @@ Full history and step-by-step instructions. Paste THIS file into a new chat so a
 context. `NOTES.md` is the short current-state sheet for people; keep both up to date.
 
 ## Goal
+
 Autonomous Ackermann rover for forest navigation (data collection for another
 school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 (2) roam inside a boundary, (3) get unstuck. Mapping is secondary.
 
 ## Stack
+
 - ROS 2 Jazzy + Gazebo Harmonic, Ubuntu 24.04 in a distrobox on Arch (Hyprland)
 - Hardware: Pi 5, 2x ESP32 (Arduino IDE, C++), RPLIDAR S2, GPS, IMU (MPU6050 per old
   comments, unverified), 6 ultrasonics (removed from the real rover for now; simulated)
 - Pi code in Python, firmware in C++
 
 ## Environment quirks
+
 - Login shell is fish, but ROS work happens in zsh (ROS has no fish setup script)
 - zsh config is `~/.config/zsh/.zshrc` (ZDOTDIR), NOT `~/.zshrc`
 - `QT_QPA_PLATFORM=xcb` is set there so Gazebo/RViz run through XWayland
@@ -23,6 +26,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Do NOT set QT_SCALE_FACTOR (causes black flashing in RViz)
 
 ## Quick start (sim)
+
 1. `ros2 launch rover_bringup sim_nav.launch.py` starts everything in order, on timers: sim (0 s),
    `us_to_range` + rf2o + scan gate (10 s), both EKFs (15 s), Nav2 (22 s), RViz (25 s), `boundary_canvas` (26 s),
    `roam` (30 s) and the control panel (30 s). All delays are guesses: if Nav2 times out waiting for `odom`,
@@ -32,6 +36,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
    `gz sim -g` in another terminal.
 2. In RViz, send goals with "2D Goal Pose". Drive by hand only when Nav2 has no goal:
    `ros2 run teleop_twist_keyboard teleop_twist_keyboard` (avoid `j`/`l`; press `k` to stop).
+
 - Manual start order, if you need the terminals separately: `sim.launch.py`, `lidar_odom.launch.py`,
   `ekf.launch.py`, `nav2.launch.py` LAST.
 - Stop everything with Ctrl+C in each launch terminal. Closing the Gazebo window does NOT stop the sim.
@@ -44,6 +49,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   a separate mapping session.
 
 ## Git conventions
+
 - `main` always works; one descriptive branch per piece of work (no phase numbers)
 - Commit after each working step; merge to main (`--no-ff`) when a branch's goal is done
 - Tag each finished milestone before deleting any branch. Tags so far: `robot-model-v1`,
@@ -52,6 +58,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Finished branches still exist (all merged). Deleting them is optional; the tags preserve the work.
 
 ## Frame conventions
+
 - `base_footprint`: on the ground under the rear axle center
 - `base_link`: one wheel radius above it. X forward, Y left, Z up
 - `lidar_link` rides on `lift_platform` (prismatic `lift_joint`, 0 to 1.2192 m)
@@ -59,31 +66,33 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   switches only (no position feedback)
 
 ## Measurements (meters)
-| Item | Value | Status |
-|---|---|---|
-| Wheelbase | 0.686 | measured |
-| Track width | 0.559 | measured (overlaps chassis width, recheck) |
-| Wheel radius / width | 0.15875 / 0.1016 | measured |
-| Chassis L x W x H | 1.118 x 0.562 x 0.457 | measured |
-| Ultrasonic mounting height | 3 in (0.0762 m) above the top of the wheels | measured |
-| Total mass | ~30 kg | PLACEHOLDER (xacro `chassis_mass` is 24.0 kg; the rest of the model's mass was not summed, check) |
-| Ground clearance | 0.08 | PLACEHOLDER |
-| Max steer angle | 0.7 rad | PLACEHOLDER |
-| Lift platform mass / size / speed | 5 kg / 0.4 x 0.4 m / 0.05 m/s | PLACEHOLDER |
-| Ultrasonic positions, angles, cone | front, rear, 4 corners at 45 deg (`us_side_y` 0.28, `us_angle` pi/4); see xacro | PLACEHOLDER |
-| LIDAR / GPS / IMU positions | see xacro (GPS flat on the chassis) | PLACEHOLDER |
-| Nav2 MPPI speeds (`vx_max` 0.65, `vx_min` -0.45, `wz_max` 1.0) | `nav2_params.yaml` | PLACEHOLDER (untested guesses) |
-| `minimum_turning_radius` | 0.8 (both MPPI and Smac) | PLACEHOLDER (derived from the placeholder steer angle: 0.686 / tan(0.7) = ~0.81) |
-| Goal tolerances | `xy_goal_tolerance` 0.5, `yaw_goal_tolerance` 3.14 (was 1.5) | tuned in the sim only |
-| Costmap `inflation_radius` / `cost_scaling_factor` | 1.5 / 1.0 | PLACEHOLDER (from the old project) |
-| Scan gate `lift_timeout` | 1.0 s | PLACEHOLDER |
-| `sim_nav` start delays | 10, 15, 22, 25, 26, 30, 30 s | PLACEHOLDER (guesses) |
-| Nav2 footprint | [0.902, +-0.33] to [-0.216, +-0.33] | derived from the xacro; depends on the unverified track width |
-| rf2o gate limits (`odom_covariance.py`) | 1.5 m/s, 2.0 rad/s | PLACEHOLDER (generous guesses) |
-| Extra sim trees | `tree_5` to `tree_26` | PLACEHOLDER positions |
-| Range layer (`phi`, thresholds, `clear_on_max_reading`) | 1.2, 0.2 / 0.8, true | from memory, not tuned |
+
+| Item                                                           | Value                                                                           | Status                                                                                            |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Wheelbase                                                      | 0.686                                                                           | measured                                                                                          |
+| Track width                                                    | 0.559                                                                           | measured (overlaps chassis width, recheck)                                                        |
+| Wheel radius / width                                           | 0.15875 / 0.1016                                                                | measured                                                                                          |
+| Chassis L x W x H                                              | 1.118 x 0.562 x 0.457                                                           | measured                                                                                          |
+| Ultrasonic mounting height                                     | 3 in (0.0762 m) above the top of the wheels                                     | measured                                                                                          |
+| Total mass                                                     | ~30 kg                                                                          | PLACEHOLDER (xacro `chassis_mass` is 24.0 kg; the rest of the model's mass was not summed, check) |
+| Ground clearance                                               | 0.08                                                                            | PLACEHOLDER                                                                                       |
+| Max steer angle                                                | 0.7 rad                                                                         | PLACEHOLDER                                                                                       |
+| Lift platform mass / size / speed                              | 5 kg / 0.4 x 0.4 m / 0.05 m/s                                                   | PLACEHOLDER                                                                                       |
+| Ultrasonic positions, angles, cone                             | front, rear, 4 corners at 45 deg (`us_side_y` 0.28, `us_angle` pi/4); see xacro | PLACEHOLDER                                                                                       |
+| LIDAR / GPS / IMU positions                                    | see xacro (GPS flat on the chassis)                                             | PLACEHOLDER                                                                                       |
+| Nav2 MPPI speeds (`vx_max` 0.65, `vx_min` -0.45, `wz_max` 1.0) | `nav2_params.yaml`                                                              | PLACEHOLDER (untested guesses)                                                                    |
+| `minimum_turning_radius`                                       | 0.8 (both MPPI and Smac)                                                        | PLACEHOLDER (derived from the placeholder steer angle: 0.686 / tan(0.7) = ~0.81)                  |
+| Goal tolerances                                                | `xy_goal_tolerance` 0.5, `yaw_goal_tolerance` 3.14 (was 1.5)                    | tuned in the sim only                                                                             |
+| Costmap `inflation_radius` / `cost_scaling_factor`             | 1.5 / 1.0                                                                       | PLACEHOLDER (from the old project)                                                                |
+| Scan gate `lift_timeout`                                       | 1.0 s                                                                           | PLACEHOLDER                                                                                       |
+| `sim_nav` start delays                                         | 10, 15, 22, 25, 26, 30, 30 s                                                    | PLACEHOLDER (guesses)                                                                             |
+| Nav2 footprint                                                 | [0.902, +-0.33] to [-0.216, +-0.33]                                             | derived from the xacro; depends on the unverified track width                                     |
+| rf2o gate limits (`odom_covariance.py`)                        | 1.5 m/s, 2.0 rad/s                                                              | PLACEHOLDER (generous guesses)                                                                    |
+| Extra sim trees                                                | `tree_5` to `tree_26`                                                           | PLACEHOLDER positions                                                                             |
+| Range layer (`phi`, thresholds, `clear_on_max_reading`)        | 1.2, 0.2 / 0.8, true                                                            | from memory, not tuned                                                                            |
 
 ## Status
+
 - [x] ROS 2, Gazebo, shell, git set up
 - [x] ROS basics (rover_basics package: publisher, subscriber, launch file)
 - [x] rover_description: chassis, 4 wheels, steering, sensors, lift, RViz launch
@@ -111,8 +120,8 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - [ ] Serial protocol (Python + C++ + Pi bridge done on a virtual cable; ESP sketch and ROS node not started).
 - [ ] Field testing
 
-
 ## How to work with me (instructions for any assistant)
+
 - ONE step at a time. Never give a long multi-step list; I hit problems mid-way
   and a big list gets buried. Wait for my output before the next step.
 - I type all code myself to learn it. Explain what each part does, briefly.
@@ -128,6 +137,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   maintainer never has to rebuild context from scratch. Also update `NOTES.md` (the short current-state sheet).
 
 ## Workflow gotchas (these have bitten us)
+
 - After editing any file in a package, run `colcon build --packages-select <pkg>`
   from `~/rover_ws` before launching. Launch uses the installed copy, not `src/`.
 - After creating a NEW package, open a new terminal (or `source ~/.config/zsh/.zshrc`).
@@ -170,6 +180,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   not checked.
 
 ## Mistakes already made (don't repeat)
+
 - ROS 2 has NO fish setup script. Use zsh with `setup.zsh`.
 - Edit `~/.config/zsh/.zshrc`, not `~/.zshrc` (ZDOTDIR points to the former).
 - Hyprland here uses the Lua config format. Custom changes go in
@@ -182,6 +193,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   sim". Check `git log` or `git diff` before assuming a change is not committed.
 
 ## Repo layout
+
 - Repo: github.com/Nico-Carlson/ros_rover (private), local folder `~/rover_ws`
 - `src/rover_basics`: ament_python practice package (hello publisher/subscriber)
 - `src/rover_description`: ament_cmake. `urdf/rover.urdf.xacro` (model), `urdf/rover.gazebo.xacro`
@@ -197,6 +209,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   not the geometry.
 
 ## Gazebo simulation (done, tag gazebo-sim-v1)
+
 - Verified installed: Gazebo Sim 8.15.0, ros_gz (ros_gz_sim, ros_gz_bridge,
   ros_gz_image, ros_gz_interfaces), robot_localization.
 - Gazebo tags live in `urdf/rover.gazebo.xacro`, included from `rover.urdf.xacro`.
@@ -241,6 +254,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   and sim odom covariance is all zeros. All three need handling in the EKF work.
 
 ## Obstacle world (done, tag obstacle-world-v1)
+
 - `tree_1` (5, 0), `tree_2` (8, -3), `tree_3` (8, 3), `tree_4` (12, 0.5): cylinders, r 0.2 to 0.35 m, 2 m tall.
   `rock_1` (3, 3): 0.5 m tall. `boulder_1` (3, -3): 0.9 m tall. `stump_1` (2.5, 0): 0.4 m square, 0.5 m tall,
   directly ahead of the spawn point.
@@ -249,6 +263,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   than ~0.57 m is a blind spot for the 2D LIDAR; the ultrasonics are meant to cover it.
 
 ## Ultrasonics (done, tag ultrasonics-v1)
+
 - Six frames `us_front_left/mid/right` and `us_rear_left/mid/right` on `base_link` in `rover.urdf.xacro`.
   Mounted 3 in (0.0762 m) above the top of the wheels, 0.15 m left/right of center, outer sensors angled
   0.26 rad outward, rear set faces backward (yaw pi). All positions are PLACEHOLDERS except the height. (Layout changed later:
@@ -266,6 +281,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   range-sensor obstacle layer fed by them (built since, see "Ultrasonics in Nav2").
 
 ## SLAM (done, tag slam-mapping-v1)
+
 - `rover_bringup/config/slam_mapping.yaml` is a copy of the stock slam_toolbox
   `mapper_params_online_async.yaml`. Only change so far: `max_laser_range` 20 -> 10 (S2 reaches ~10 m on
   dark targets). Frames already matched: odom, map, base_footprint, `/scan`.
@@ -282,6 +298,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   `/scan_filtered` when SLAM is next used.
 
 ## Localization (done in the sim, tag ekf-localization-v1)
+
 - HISTORY: this section is chronological. The final design is the dual EKF described in its later bullets
   and in "Hardware-matched EKF"; `/odometry/filtered` no longer exists, and the bullets that mention fusing
   `/odom` are superseded (wheel odometry is no longer fused).
@@ -323,6 +340,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   unverified). Watch whether it recurs; it matters for the Pi.
 
 ## GPS noise and covariance (done in the sim, branch gps-covariance)
+
 - Sim GPS noise (PLACEHOLDERS): navsat `position_sensing` horizontal gaussian stddev 0.0000135, vertical
   3.0. It seems to be applied in degrees (~1.5 m north-south, ~1.06 m east-west at 45 deg latitude); that is
   inferred from sample scatter, not confirmed in the docs.
@@ -343,8 +361,8 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   so hardware needs another heading source.
 - Verified (stationary): `map -> base_footprint` yaw 0.000 on every sample, translation within ~1 m of origin.
 
-
 ## Old files (uploaded earlier, NOT trusted, reuse selectively)
+
 - `ekf.yaml`: dual-EKF design (`ekf_filter_node` in odom, `ekf_filter_node_map` in map fusing
   `/odometry/gps` from navsat_transform). Already reused (see "Localization").
 - `nav2_params.yaml` (and a duplicate `nav2_params_1.yaml`): was copied into `rover_bringup/config/` and
@@ -361,11 +379,12 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   forward, override switch, stop on loss of radio contact. No part numbers and NO wheel encoders mentioned.
   The firmware must map `/cmd_vel` to throttle/steering/brake/reverse.
   - Wiring PDFs (unverified): master ESP drives a BTS7960 H-bridge for the drive motor, a
-  steering servo, an RC receiver (7 channels), and the lift controller (relay, limit
-  switches). Sensor ESP handles ultrasonics, gyro (I2C), battery voltage, and an override
-  switch.
+    steering servo, an RC receiver (7 channels), and the lift controller (relay, limit
+    switches). Sensor ESP handles ultrasonics, gyro (I2C), battery voltage, and an override
+    switch.
 
 ## No wheel encoders on the real rover (stated by me, replaces the odometry plan)
+
 - The real rover has NO wheel encoders, so no real `/odom` forward speed. The sim's wheel odometry is a
   sim-only source. Everything that fuses or compares `/odom` (both EKFs, the wheel-vs-GPS stuck idea) needs a
   hardware plan.
@@ -376,9 +395,10 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   whether rf2o holds up on rough, cluttered terrain.
 
 ## Hardware-matched EKF and LIDAR odometry (done in the sim, branch hardware-matched-ekf)
+
 - Neither EKF fuses the sim's `/odom` any more (the real rover has no encoders). Odom filter: IMU absolute yaw
-  + yaw rate (sim only, see GPS section) and `/odom_rf2o_cov` forward speed + yaw rate. Map filter: GPS x/y as
-  `odom0`, IMU yaw + yaw rate, and `/odom_rf2o_cov` speed + yaw rate as `odom1`.
+  - yaw rate (sim only, see GPS section) and `/odom_rf2o_cov` forward speed + yaw rate. Map filter: GPS x/y as
+    `odom0`, IMU yaw + yaw rate, and `/odom_rf2o_cov` speed + yaw rate as `odom1`.
 - GOTCHA: a sensor numbered `odom1` with no `odom0` is ignored (the map filter read exactly 0.0 until the GPS
   entry was renamed `odom0`). Number sensors from 0.
 - rf2o (LIDAR odometry, GPL v3): cloned into `src/rf2o_laser_odometry`, which is git-ignored, NOT in this
@@ -404,6 +424,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   rf2o speed instead.
 
 ## Scan gating (done in the sim, tag scan-gating-v1)
+
 - Goal: LIDAR consumers (rf2o and Nav2 now; SLAM later) must only see scans taken with the lift fully down.
 - Design: one signal, `/lift_down` (`std_msgs/Bool`, true = fully down). Sim: derived from `lift_joint` in
   `/joint_states`. Hardware: the ESP32 publishes it from the limit switch. The gate does not care which.
@@ -435,6 +456,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   can look like "no obstacles". The rover should stop when the scan goes silent. Not designed yet.
 
 ## Nav2 (done in the sim, tag nav2-sim-v1)
+
 - `config/nav2_params.yaml`: copied from the old project, then: footprint [0.902, +-0.33] to [-0.216, +-0.33]
   (chassis centered 0.343 m ahead of base_footprint; 0.33 half-width includes wheels, track width unverified),
   scan topics -> `/scan_filtered` (both costmap obstacle layers and `collision_monitor`), odom topics ->
@@ -463,6 +485,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   Pi CPU check, boundary roaming and stuck recovery. Goals around trees at longer range are untested.
 
 ## Roaming and stuck recovery (merged without stuck recovery, tag roaming-and-panel-v1)
+
 - Plan: (1) boundary polygon editor, (2) roam goal generator, (3) scan stops (lift up, wait, lift down),
   (4) stuck detector (BOTH signals: commanded vs rf2o speed, and no progress toward the goal) + recovery,
   (5) a supervisor tying them together.
@@ -476,11 +499,11 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   The saved boundary is not displayed in RViz on a new run (the line only draws that run's clicks).
 - DONE (2) `scripts/roam.py`: `load_boundary`, `point_in_polygon`, `VisitGrid` (5 m cells, counts entries),
   `SmoothNoise` + `Walker` (hops 5 to 8 m, up to +/-60 deg turn per hop; when every cell within 10 m has
-  >= 1 visit it targets the least-visited cell, in short hops), and `RoamNode` (reads `map -> base_footprint`
-  from TF, sends `NavigateToPose` goals, a 1 s timer marks cells and sends the next goal when `busy` is
-  False). Offline test: 26 cells, 23 visited after 60 hops. Run with
-  `python3 ~/rover_ws/src/rover_bringup/scripts/roam.py --ros-args -p use_sim_time:=true` (needs
-  `use_sim_time` or timestamps do not match the sim).
+  > = 1 visit it targets the least-visited cell, in short hops), and `RoamNode` (reads `map -> base_footprint`
+  > from TF, sends `NavigateToPose` goals, a 1 s timer marks cells and sends the next goal when `busy` is
+  > False). Offline test: 26 cells, 23 visited after 60 hops. Run with
+  > `python3 ~/rover_ws/src/rover_bringup/scripts/roam.py --ros-args -p use_sim_time:=true` (needs
+  > `use_sim_time` or timestamps do not match the sim).
 - (Since done, see the last bullet of this section.) Was: add `boundary_canvas.py` and `roam.py` to `install(PROGRAMS ...)` and `chmod +x`
   them, add a launch file, decide whether `boundary.yaml` is committed (it is test data from the sim).
 - OPEN PROBLEM: roaming stalls. One goal succeeded (status 4, ~38 s). Others were sent and never reported a
@@ -548,6 +571,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   `yaw_goal_tolerance` 3.14 is committed but the heading hypothesis is still UNSUPPORTED by testing.
 
 ## Control panel (done in the sim, branch roaming-and-recovery)
+
 - `scripts/control_panel.py` (PyQt5, confirmed installed; PySide6 is not). ROS runs inside Qt through a 50 ms
   QTimer calling `rclpy.spin_once`.
 - Services (all `Trigger` unless noted): `roam.py` offers `/start_patrol` and `/stop_patrol` (stop also cancels
@@ -571,8 +595,8 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   local = how the controller passes obstacles and "Failed to make progress". Keep local at or below global.
 - DONE: a label under the sliders subscribes to /patrol_status and goes stale after 5 s. Not done: sliders reading real values at startup, tabs if the panel gets too tall.
 
-
 ## Ultrasonics in Nav2 (done in the sim, branch roaming-and-recovery)
+
 - The ultrasonics were publishing but unused. `scripts/us_to_range.py` (SIM ONLY, launched by `sim_nav` at 10 s)
   converts each 5-ray `/us/<name>` LaserScan into one `sensor_msgs/Range` on `/us_range/<name>` (nearest valid
   ray; `inf` when nothing is in range; field of view 0.262). The real ESP32 firmware will publish Range
@@ -590,6 +614,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   `rover_description` also reinstalls `rover.rviz` from `src`, so an RViz display added live and never saved is lost.
 
 ## Localization failures and fixes (branch roaming-and-recovery)
+
 - Symptom: roaming aborts, RViz "drifting" off the boundary, ~34 `Failed to make progress` per 10 min. The
   inflation-slider experiments were confounded by this (don't trust those runs).
 - Method: a loop that prints `/odom`, `/odom_rf2o`, `/odometry/local`, `/odometry/global` every 30 s
@@ -627,6 +652,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   heightmap (USGS elevation) and a SLAM map of the site.
 
 ## Canvas, status topic and RViz config (done in the sim, branch roaming-and-recovery)
+
 - `boundary_canvas.py`: the green slab is now hidden at start. New Boundary (`/clear_boundary`) shows it, and it
   is removed with a `DELETE` marker (`hide_canvas`) when the polygon closes. So on the FIRST run you must press
   New Boundary before you can click corners (Publish Point needs a surface to land on).
@@ -634,7 +660,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   NameError whenever no boundary was loaded. It now lives in `on_start_patrol`, and `try_start` just returns if
   there is no polygon or patrol is stopped. Start Patrol answers `success=False` with no boundary.
 - `/patrol_status` (`std_msgs/String`, once a second from `roam`): `<state> | goals ok N, failed N, canceled N |
-  unvisited cells N`. States: `No boundary`, `Stopped`, `Patrolling`, `Patrolling (waiting for a goal)`. Goal
+unvisited cells N`. States: `No boundary`, `Stopped`, `Patrolling`, `Patrolling (waiting for a goal)`. Goal
   status 4 counts as ok, 5 as canceled (Stop Patrol and the watchdog), anything else as failed. Counters reset
   when a new boundary loads. Verified with `ros2 topic echo /patrol_status`. NOT yet shown on the panel (TODO).
 - RViz config gotcha: `sim_nav` starts RViz with the INSTALLED `rover.rviz`, so File > Save Config writes there
@@ -644,6 +670,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - `gz sim -g` attaches a Gazebo GUI to the server-only sim.
 
 ## Open questions
+
 - Exact ultrasonic part (model number) is unknown, so their range/cone are still placeholders.
 - Which RPLIDAR S2 variant (30 m or 18 m) is on the rover; check the label.
 - Where the real GPS antenna sits (a forest rover probably needs it up on a mast, not in the LIDAR plane).
@@ -658,6 +685,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   localization is stable.
 
 ## Parts (from Amazon listing titles; specs below are from memory, NOT verified)
+
 - Ultrasonic: HC-SR04 (about 15 deg cone, ~4 m nominal, 5 V echo needs level shifting for the 3.3 V ESP32,
   not weatherproof). Sim cone (+/-0.131 rad) and 4 m range are close.
 - GPS: NEO-6M (GY-NEO6MV2). Typically ~2.5 m accuracy, 1 to 5 Hz, heading only while moving.
@@ -666,6 +694,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   1.2192 m. CONFIRM this is the real lift before changing `lift_travel`.
 
 ## Concerns about the Pi (nothing measured yet)
+
 1. CPU load: S2 gives 3200 points per scan at 10 Hz feeding rf2o, Nav2 costmaps, and SLAM if used; MPPI cost
    and Smac's ~29 s configure are also unmeasured.
 2. Timing: the EKFs logged `Failed to meet update rate!` in the sim; a loaded Pi could repeat it and Nav2 would
@@ -675,6 +704,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
    `lidar_odom.launch.py` has no argument for that yet.
 
 ## Live tuning sliders (done for Roam and Nav2, see "Control panel"; danger zones and stop distances still need nodes that do not exist yet)
+
 - DONE as a custom PyQt5 panel, not `rqt_reconfigure`. The bullets below are the original idea.
 - Goal: a small tool with sliders to change values while the sim or rover runs (goal tolerances, speed limits,
   danger zones) with no rebuild or relaunch.
@@ -688,7 +718,9 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   trying it.
 
 ## Firmware approach (proposed, NOT final)
+
 ### Decided so far (2026-11-08)
+
 - Order: (1) the new ESP32 codebase working with ROS in MANUAL mode only, with an RC switch that overrides any Nav2 command so the rover drives fully by hand; (2) only then add the Nav2 stack that works in the sim.
 - The manual/auto override lives in the master ESP (works with the Pi off or crashed). The RC receiver plugs straight into the master ESP.
 - Plain serial (UART RX/TX) instead of micro-ROS, hoping to fix the lag. micro-ROS also ran over a UART, so what changes is the protocol on top (text lines + checksum + a pyserial bridge on the Pi), not the wire.
@@ -698,6 +730,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - No hardware yet: work proceeds with PLACEHOLDER pins and no board. Pure logic (packet CRC and parser, mode switch, timeouts, throttle/brake/steer maps, reverse state machine, tilt math) is kept free of Arduino calls so it compiles and is tested on the PC. The Pi bridge is tested against a fake ESP script on a virtual serial port (`socat`). Everything is marked UNTESTED ON HARDWARE until the bench checklist in "Pre-ROS firmware review" has been run on the real boards.
 
 ### Serial protocol plan (2026-11-08, PLAN ONLY: nothing written or tested yet)
+
 - Why: a UART is a raw byte stream with no message boundaries. The pre-ROS sensor-to-master link (10 raw bytes, no
   markers) misaligned permanently after one lost byte. The micro-ROS version fixed that with a magic byte + CRC; the
   idea is kept.
@@ -710,15 +743,17 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   only when a full one has arrived); a maximum line length (PLACEHOLDER ~100 bytes) with the buffer reset on overflow;
   debug text must never share this link (see the Pi link decision).
 - Messages (fields and rates are PLACEHOLDERS):
-  | Direction | Message | Carries |
-  |---|---|---|
-  | Pi -> ESP | `CMD` | speed (m/s), steering ANGLE (deg, computed on the Pi, not a yaw rate), lift speed |
-  | Pi -> ESP | `DANGER` | stop flag |
-  | ESP -> Pi | `IMU` | tilt, yaw rate, accelerations (Pi adds timestamp, frame_id, covariances) |
-  | ESP -> Pi | `GPS` | lat, lon, fix quality / HDOP, fix age (send only on a NEW fix, not repeats) |
-  | ESP -> Pi | `BAT` | battery voltage |
-  | ESP -> Pi | `LIFT` | up and down limit switch LEVELS (pressed or not), sent continuously |
-  | ESP -> Pi | `MODE` | manual or autonomous, danger and warning flags, brake state |
+
+  | Direction | Message  | Carries                                                                           |
+  | --------- | -------- | --------------------------------------------------------------------------------- |
+  | Pi -> ESP | `CMD`    | speed (m/s), steering ANGLE (deg, computed on the Pi, not a yaw rate), lift speed |
+  | Pi -> ESP | `DANGER` | stop flag                                                                         |
+  | ESP -> Pi | `IMU`    | tilt, yaw rate, accelerations (Pi adds timestamp, frame_id, covariances)          |
+  | ESP -> Pi | `GPS`    | lat, lon, fix quality / HDOP, fix age (send only on a NEW fix, not repeats)       |
+  | ESP -> Pi | `BAT`    | battery voltage                                                                   |
+  | ESP -> Pi | `LIFT`   | up and down limit switch LEVELS (pressed or not), sent continuously               |
+  | ESP -> Pi | `MODE`   | manual or autonomous, danger and warning flags, brake state                       |
+
 - Watchdogs (carried over from the old designs): master with no fresh `CMD` for ~250 to 500 ms (PLACEHOLDER) =
   zero throttle and brake applied; Pi with no ESP lines treats the lift as not down; master with no sensor
   heartbeat (350 ms in the old firmware) = danger. The master<->sensor safety link keeps its own framed packet on 16/17.
@@ -728,6 +763,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   uppercase hex digits), then a matching check function. All UNTESTED ON HARDWARE.
 
 ### Serial protocol implementation (2026-11-08, branch serial-protocol)
+
 - Lives in `~/rover_ws/protocol/`, NOT a ROS package, so it tests on the PC with no ROS. `SPEC.md` is the
   source of truth (DRAFT: `CMD`, `MODE`, `LIFT`, `BAT` defined; all fields and rates PLACEHOLDER).
 - Python (`protocol.py`): `checksum`, `parse_line`, `make_line`, `make_cmd`, `make_lift`, `LineReader`
@@ -742,7 +778,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Tests (run from INSIDE `protocol/`, since running pytest from `~/rover_ws` also collects the failing
   `rover_basics` flake8 test): `cd ~/rover_ws/protocol && python3 -m pytest -q` (20 tests, includes
   `test_bridge.py`, which starts its own `socat`). C++: `cd cpp && g++ -Wall -o test_protocol
-  test_protocol.cpp protocol.cpp && ./test_protocol`.
+test_protocol.cpp protocol.cpp && ./test_protocol`.
 - Needs `sudo apt install python3-serial socat` (pip is not installed in the distrobox).
 - Verified on the PC only (virtual serial cable): good lines arrive, junk and corrupted lines are dropped and
   the link recovers, CMD reaches the ESP, a silent ESP makes `lift_down` false. UNTESTED ON HARDWARE.
@@ -765,7 +801,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   `firmware/master_serial/` holds COPIES of the `protocol/cpp/` files (the Arduino IDE only compiles files inside
   the sketch folder), so re-copy after any change there; `mode_switch` is not in the sketch yet.
   Branch `serial-protocol` is still unmerged and untagged (when ready: `git checkout main && git merge --no-ff
-  serial-protocol && git tag serial-protocol-v1`).
+serial-protocol && git tag serial-protocol-v1`).
 - Pure-logic modules for the master sketch, all in protocol/cpp/, tested on the PC in test_protocol.cpp (no Arduino calls, UNTESTED ON HARDWARE): watchdog (command freshness, never-seen = stale, millis wrap safe), drive (drive_from_speed: speed to throttle DAC, reverse relay and brake from ONE threshold, so the old “small reverse drives forward” bug cannot happen; 1.5 m/s full scale and 0.05 stop band are PLACEHOLDERS), reverse_guard (stop, settle 500 ms PLACEHOLDER, switch relay, go; no encoders, so it waits a fixed time and cannot confirm the rover stopped), mode_switch (manual at or below 1400 us, auto at or above 1600, between means manual, 3 frames to change, stale = manual, numbers from the old ROS firmware; transmitter channel still unknown). Compile: g++ -Wall -o test_protocol test_protocol.cpp protocol.cpp watchdog.cpp drive.cpp reverse_guard.cpp mode_switch.cpp && ./test_protocol. For the real boards: the master sketch uses all of these except test_protocol.cpp; the sensor sketch only needs protocol.
 - Pi UART options and pin choices are still PLACEHOLDER (see the Firmware approach decisions). Nothing here has
   touched real hardware.
@@ -777,7 +813,45 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
   the failing `rover_basics` flake8 lint (976 style errors, unrelated, ignorable).
 - ROS node rover_bringup/scripts/esp_bridge.py (tested on the PC with a socat cable and printf, UNTESTED ON HARDWARE): reads the serial link at 50 Hz, publishes /lift_down from LiftState on a 10 Hz timer (false when the ESP is silent) and /battery_voltage (Float32, placeholder name). Subscribes /cmd_vel and sends CMD at 20 Hz; steering comes from protocol/kinematics.py (atan(wheelbase * wz / v), positive = left, clamped to 30 deg PLACEHOLDER, 0 at or below 0.05 m/s); a /cmd_vel older than 0.5 s (PLACEHOLDER) sends speed 0. CMakeLists.txt installs bridge.py, protocol.py and kinematics.py from ../../protocol/ next to the node (an install(FILES ...) block above ament_package()); package.xml has python3-serial. Not yet done: MODE is not published, /imu and /gps/fix wait for IMU/GPS in the spec, esp_bridge is not in sim_nav (sim-only: it must not run in the sim) and not in a hardware launch file. Also still to add to SPEC.md: steer positive = left.
 
+### Bench session 2026-11-12 (first hardware contact; `ENABLE_OUTPUTS` still 0, nothing driven)
+
+Master and sensor boards flashed over USB. Pulse widths below were read from the master's serial monitor (`# pulses us:` line).
+
+Measured RC pulses (us):
+
+- steer (ch1): full left 983, rest 1511, full right 2051.
+- throttle/brake (ch2): full pull 1001 (more throttle = LOWER pulse), rest 1554, pushed away (brake) 2061.
+- lift (ch6): down 983, rest 1515, up 2048.
+- mode (ch5, master pin 22): three-way switch, down 982 / middle 1514 / up 2048. Matches the 1400/1600 thresholds unchanged (up = auto; middle and down = manual). Answers the open question: the pin 22 switch is ch5.
+- reverse (ch7, master pin 34): button, about 979 off, 2045 held. The old `REVERSE_PULSE_MIN` 2000 left only 45 us of margin.
+
+Receiver failsafe (receiver model given as RC6GS V3):
+
+- With the transmitter OFF the receiver keeps sending centred pulses (steer 1515, thr 1514, lift 1514, rev 1512). The master therefore never sees "no signal", so the "stale = brake" path does not fire. At thr 1514 the DAC is about 2 and there is NO brake (the rover coasts). A receiver failsafe is required, not optional.
+- Throttle channel failsafe was set on the transmitter to the brake end (about 2060). NOT yet re-tested: switch the transmitter off and confirm `thr` is about 2060 and the debug line shows `mbrake=1`.
+- Mode (ch5) goes 2000 -> 1500 when the transmitter is off, which the dead zone reads as manual. A lost transmitter can never leave the rover in autonomous. Consequence: autonomous only runs while the transmitter is on and the switch is up.
+- The other channels' centred failsafe is acceptable: lift stops, steering centres, reverse reads 1512 (below the threshold).
+- PROPOSED constants from these numbers (confirm they are in the `FILL IN` block): `THROTTLE_PULSE_MIN` 1010, `THROTTLE_PULSE_MAX` 1500, `BRAKE_PULSE_MIN` 1900, `REVERSE_PULSE_MIN` 1700. 1500 would be wrong for reverse because the failsafe value 1512 would read as pressed.
+
+Safety link (sensor -> master, 4 bytes at 10 Hz, one-way on pins 16/17, shared ground):
+
+- Packet: magic 0xA5, sequence, flags (bit 0 danger, bit 1 warning), CRC-8 (poly 0x07, init 0) over sequence + flags. Code is in `protocol/cpp/safety_link.cpp/.h` (CRC, builder, byte-by-byte reader that resyncs on the magic byte, freshness wrapper reusing `watchdog`); copies live in both sketch folders. Tested on the PC (43 pytest tests plus the C++ suite pass).
+- DECIDED: danger and warning HOLD until the next good packet changes them. "Stale" (no good packet in 350 ms, PLACEHOLDER from the old firmware, or none ever) shows only in the master's debug line (`stale=`) and does NOT raise danger. The sequence number is not checked yet (left out on purpose).
+- DECIDED: danger stops and brakes AUTONOMOUS driving only. Manual driving ignores danger (so the rover cannot strand itself on a slope). Danger does not touch the reverse relay (the old firmware forced it off) and does not stop the lift.
+- On hardware: after flashing the sensor board the master showed `stale=0`, so the link works. Baud 115200 is a PLACEHOLDER and must match in both sketches.
+- Sensor sketch now sends `LIFT` at 10 Hz, `BAT` at 1 Hz, tilt from the MPU6050 at 50 Hz (a dead sensor for 350 ms = danger) and the safety packet. Master sketch now has steering (RC or Pi angle) and manual lift with a throttle interlock.
+
+MPU6050 (sensor board):
+
+- At first `mpu_ok=0` (so danger=1 after 350 ms, by design). It worked after its power and ground were reconnected, so that connection is marginal; check it.
+- At rest it read roll -166.4, pitch -1.2: the board is mounted upside down about the X axis (GUESS from the numbers). Fixed with `MPU_SIGN_Y` = _**, `MPU_SIGN_Z` =**_ and level offsets roll _**, pitch**_ in the sketch's `FILL IN` block. Calibrated against the rover's resting position; confirm `danger=0 warn=0` at rest on the master's debug line, then check nose up/down and left/right symmetry.
+
+Python side: `protocol.parse_mode` plus `protocol/test_mode.py` are done. `esp_bridge` does not publish `MODE` yet. PLAN: `/rover/autonomous`, `/rover/danger`, `/rover/warning`, `/rover/brake` (Bool) and `/rover/esp_link_ok` (false when no `MODE` for 0.5 s, PLACEHOLDER; a silent ESP also forces `autonomous` false).
+
+Still UNTESTED ON HARDWARE: every output (throttle DAC, brake actuator and which BTS7960 pin extends it, steering servo, lift, reverse relay), the throttle multimeter test, and the Pi link. `DEBUG_PRINT` and the pulse line share the Pi's UART0: set `DEBUG_PRINT` to 0 before wiring the Pi.
+
 ### Master sketch progress (2026-11-08, branch serial-protocol, pushed; compile-only, UNTESTED ON HARDWARE)
+
 - `firmware/master_serial/` holds COPIES of the `protocol/cpp/` files (the Arduino IDE only compiles files inside
   the sketch folder). Re-copy after any change in `protocol/cpp/`. Pure logic is tested on the PC; the .ino is not.
 - Every uncertain value (pins, pulse ranges, thresholds) sits in one `FILL IN` block at the top of `master_serial.ino`.
@@ -804,9 +878,11 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - Branch `serial-protocol` is still unmerged and untagged.
 
 ### Session log 2026-11-08 evening (firmware rebuild, pure logic + Pi node)
+
 All of this is UNTESTED ON HARDWARE (no Pi or ESPs available). C++ is tested on the PC only.
 
 DONE and tested on the PC (`cd ~/rover_ws/protocol/cpp && g++ -Wall -o test_protocol test_protocol.cpp protocol.cpp watchdog.cpp drive.cpp reverse_guard.cpp mode_switch.cpp && ./test_protocol | grep FAIL`; no output = no failures):
+
 - `protocol.cpp/.h`: `protocol_make_line`, `protocol_make_lift`, `protocol_make_bat`, `protocol_make_mode`, `protocol_parse_cmd` (strict: CMD plus exactly 3 finite numbers, outputs untouched on failure).
 - `watchdog` (command freshness, never-seen = stale, millis-wrap safe, 500 ms timeout PLACEHOLDER).
 - `drive` (`drive_from_speed`: ONE threshold decides throttle DAC, reverse and brake together; 1.5 m/s full scale and 0.05 m/s stop band PLACEHOLDERS; fixes the old "small reverse drives forward" bug).
@@ -817,13 +893,14 @@ DONE and tested on the PC (`cd ~/rover_ws/protocol/cpp && g++ -Wall -o test_prot
 - First master sketch `firmware/master_serial/master_serial.ino` (+ copies of protocol, watchdog,
 
 ### Firmware files
+
 - `SenserBoardRedone.ino` + `MasterBoardRedone.ino` (each with a `globals.h`): pre-ROS firmware, drove well manually.
 - `ROSSensorBoard.ino` + `ROSMasterBoard.ino` (each with a `globals.h`): micro-ROS version. Does not work at all now; earlier it had inoperable lag, cause never found.
-- Pre-ROS module files REVIEWED 2026-11-08 (see "Pre-ROS firmware review"): `gyro`, `warning_switch`, `bluetooth`, `battery_monitor`, `lift_lower_limit`, `lift_upper_limit` (sensor side; no `gps` file was among the uploads and GPS is never started) and `throttle_and_brakes`, `reverse`, `lift`, `turning` (master side). 
+- Pre-ROS module files REVIEWED 2026-11-08 (see "Pre-ROS firmware review"): `gyro`, `warning_switch`, `bluetooth`, `battery_monitor`, `lift_lower_limit`, `lift_upper_limit` (sensor side; no `gps` file was among the uploads and GPS is never started) and `throttle_and_brakes`, `reverse`, `lift`, `turning` (master side).
 - ROS versions reviewed too: see "Old micro-ROS firmware review" (module files `*_1`, plus `gps_sensor`).
 
-
 ### Findings from reading the sketches (GUESSES about the lag, nothing tested)
+
 - micro-ROS entities use `rclc_..._init_default`, which is reliable QoS. Over a slow serial link that can stall waiting for acknowledgements; best-effort is the usual choice for sensor streams.
 - The sensor board sent a full IMU message (three covariance arrays) plus GPS at 10 Hz over 115200 baud: about 4.5 KB/s of payload by my arithmetic, against about 11.5 KB/s link capacity, before micro-ROS framing. The baud rate can also be raised.
 - Old pre-ROS master: `Serial.readStringUntil('\n')` in the main loop has a default 1 s timeout, so a half-received Pi line could freeze throttle and steering for up to a second. The new design must never block in the control loop.
@@ -833,12 +910,14 @@ DONE and tested on the PC (`cd ~/rover_ws/protocol/cpp && g++ -Wall -o test_prot
 - The ESP32 has 3 hardware UARTs, each mappable to almost any free pins. The sensor board needs 3 serial links (Pi, master, GPS), and USB flashing/debug shares UART0. Options: (a) Pi on UART0 (cost: unplug to flash, no debug prints), master link and GPS on UART1/UART2; (b) GPS and the master link share one UART at 9600 baud (the master link only uses the sensor's TX, the GPS only its RX, and the link is about 40 bytes/s), Pi on UART1, UART0 free for USB. Not decided; the first test does not need GPS.
 
 ### Open questions (firmware)
-- Which transmitter channel is the manual/auto override. It lands on master pin 22 (`turnswitch`, > 1400 us = autonomous steering, per pre-ROS `turning.cpp`); the channel number is still unknown (not 1, 2, 6 or 7).
+
+- Which transmitter channel is the manual/auto override. It lands on master pin 22 (`turnswitch`, > 1400 us = autonomous steering, per pre-ROS `turning.cpp`); the channel number is still unknown (not 1, 2, 6 or 7). SOLVED - ch 5
 - Where the GPS wires physically land on the sensor ESP (unknown; no hardware access 2026-11-08). PLACEHOLDER for the rebuild: GPS RX = GPIO 32, TX = GPIO 33 on the sensor board (free there, not strapping pins, no clash with the 16/17 master link). When the rover is available, check the real wiring, then either move the wire or change the two pin defines to match. Both old firmwares put the GPS on 16/17, which clashes with the safety link.
 - How many UARTs the Pi exposes (overlay names in `config.txt` NOT checked).
 - Real pins: the pre-ROS pins are now known (see "Pre-ROS firmware review"); the ROS boards' pins are still unchecked.
 
 ### Original Proposal
+
 - micro-ROS was tried before and had severe latency problems (cause unknown). Proposal: custom serial
   protocol, ESP32s run no ROS, and a Python bridge on the Pi (`pyserial`) translates to ROS topics.
 - Link: RX/TX between each ESP and the Pi (ESPs are powered by the rover), shared ground, 3.3 V on both
@@ -854,12 +933,14 @@ DONE and tested on the PC (`cd ~/rover_ws/protocol/cpp && g++ -Wall -o test_prot
 - Latency estimate: 115200 baud is ~11.5 KB/s; the full message set is ~3.3 KB/s (my arithmetic).
 
 ## Pre-ROS firmware review (2026-11-08)
+
 Read from source only: nothing compiled or run, so everything below is "read from code" unless it says GUESS or
 "from memory" (library behavior I recalled, not checked). The upload renamed the sensor board's `globals.h/.cpp`
 to `globals_1.*`; the master's are `globals.*`. This is the firmware that DRIVES today (manually), so it is the
 reference for the rebuild, but treat it as fallible: several bugs below.
 
 ### Architecture
+
 - Master ESP (`MasterBoardRedone.ino`): RC receiver in, motors out. `loop()` reads one sensor packet from Serial2
   (RX 16, TX 17, 115200), reads optional Pi text lines from USB `Serial`, then runs `throttle_and_brakes()`,
   `reverse()`, `lift()`, `turning()` in that order. Every RC channel is read with a blocking `pulseIn`.
@@ -874,17 +955,19 @@ reference for the rebuild, but treat it as fallible: several bugs below.
   overwritten by the next sensor packet (~100 ms), so it cannot hold. GUESS: autonomous steering was never tested.
 
 ### Pin map (master, from `globals.h`; code assumed right because it drives)
-| Pin | Use |
-|---|---|
-| 34 / 23 | reverse ch7 in / reverse relay out |
-| 32 / 25 | throttle+brake ch2 in / DAC throttle out (DAC1) |
-| 14, 19 | BTS7960 L_EN, R_EN (both just set HIGH) |
-| 18 / 2 | BTS7960 LPWM / RPWM (brake actuator) |
-| 13 | brake limit switch (pullup, LOW = pressed) |
-| 4 / 26, 27 | lift ch6 in / lift outputs A, B (both HIGH = stop) |
-| 35 / 33 | steering ch1 in / steering servo out |
-| 22 | manual/auto switch in (transmitter channel number still unknown) |
-| 16, 17 | UART to sensor board |
+
+| Pin        | Use                                                              |
+| ---------- | ---------------------------------------------------------------- |
+| 34 / 23    | reverse ch7 in / reverse relay out                               |
+| 32 / 25    | throttle+brake ch2 in / DAC throttle out (DAC1)                  |
+| 14, 19     | BTS7960 L_EN, R_EN (both just set HIGH)                          |
+| 18 / 2     | BTS7960 LPWM / RPWM (brake actuator)                             |
+| 13         | brake limit switch (pullup, LOW = pressed)                       |
+| 4 / 26, 27 | lift ch6 in / lift outputs A, B (both HIGH = stop)               |
+| 35 / 33    | steering ch1 in / steering servo out                             |
+| 22         | manual/auto switch in (transmitter channel number still unknown) |
+| 16, 17     | UART to sensor board                                             |
+
 - Stale comments in `globals.h` say pin 15 = LPWM and pin 0 = RPWM and swap 14/19; `throttle_and_brakes.cpp` has an
   older 18/21 pair commented out. The 14/19 swap is harmless (same level on both).
 - Sensor board: 21/22 I2C to MPU6050 (default Wire pins, not set in code), 34 battery ADC (divider scale
@@ -893,6 +976,7 @@ reference for the rebuild, but treat it as fallible: several bugs below.
   5/18/19/23 (clash with the light and the switch). Harmless only while no SD card or GPS is wired.
 
 ### Behavior
+
 - Throttle: ch2 pulse 980 to 1517 us maps to DAC 255 down to 0 (pulling = LOWER pulse = more throttle). Normal mode
   multiplies by 0.75; the warning block uses the full range. Outside 980 to 1517 the throttle is 0.
 - Brake: ch2 pulse > 2000 extends the actuator until the limit switch; otherwise it retracts for a fixed 2000 ms
@@ -914,7 +998,9 @@ reference for the rebuild, but treat it as fallible: several bugs below.
   announced once per press.
 
 ### Problems found (ranked; none tested, bench test with the wheels off the ground)
+
 Safety:
+
 1. Danger does not cleanly cut throttle. `warning_switch` sets BOTH flags on danger, and the `if (robot_warning)`
    block in `throttle_and_brakes()` is a separate `if` that runs after the danger block, so it re-reads the stick
    and writes the full-range throttle. It most likely still stops only because `reverse()`'s danger branch writes 0
@@ -933,36 +1019,30 @@ Safety:
    LEVEL (pressed or not) sent continuously, not a one-time event.
 6. Pi commands are overwritten every ~100 ms by the sensor packet (see Architecture).
 
-Timing:
-7. Master loop blocks on up to 5 to 6 `pulseIn` calls (20 to 25 ms timeouts) plus `readStringUntil` (1 s default
-   timeout) plus the 500 ms reverse delay. Estimate (not measured): ~50 to 120 ms per loop, so throttle and steering
-   refresh at roughly 10 Hz.
-8. Sensor loop: `gyro()` calls `mpu.begin()` EVERY loop. From memory of the Adafruit library, `begin()` resets the
-   chip, sleeps about 100 ms or more, and restores default ranges, so the +/-8 G and 5 Hz filter set in `gyro_setup()`
-   are lost after the first loop. Add `delay(50)` in each limit function. Likely 300 ms or more per loop, so the tilt
-   alarm reaches the master at ~2 to 3 Hz. CHECK: the sensor's serial monitor should print `Slow Loop Detected`
-   constantly if this is right.
-9. Packet framing: no sync or CRC, so one lost byte misaligns the link permanently (already noted above).
+Timing: 7. Master loop blocks on up to 5 to 6 `pulseIn` calls (20 to 25 ms timeouts) plus `readStringUntil` (1 s default
+timeout) plus the 500 ms reverse delay. Estimate (not measured): ~50 to 120 ms per loop, so throttle and steering
+refresh at roughly 10 Hz. 8. Sensor loop: `gyro()` calls `mpu.begin()` EVERY loop. From memory of the Adafruit library, `begin()` resets the
+chip, sleeps about 100 ms or more, and restores default ranges, so the +/-8 G and 5 Hz filter set in `gyro_setup()`
+are lost after the first loop. Add `delay(50)` in each limit function. Likely 300 ms or more per loop, so the tilt
+alarm reaches the master at ~2 to 3 Hz. CHECK: the sensor's serial monitor should print `Slow Loop Detected`
+constantly if this is right. 9. Packet framing: no sync or CRC, so one lost byte misaligns the link permanently (already noted above).
 
-Correctness:
-10. Throttle range cliff: a pulse outside 980 to 1517 gives 0 instead of clamping, so pulling the stick slightly past
-    980 drops the throttle to zero. GUESS: this is why the ROS firmware widened it to 900/2100. The brake threshold
-    (> 2000) sits at the edge of a normal 1000 to 2000 channel and works only because this transmitter exceeds 2000
-    (unmeasured).
-11. Steering range: `steering.attach(servopin, 1000, 2000)` but pulses of 500 to 2500 are written. FROM MEMORY,
-    ESP32Servo clamps `writeMicroseconds` to the attach limits (check the library source). If so, RC steering
-    saturates at stick 1250/1750 (2x gain) and autonomous saturates at +/-15 deg, not +/-30. Fix, if the servo
-    tolerates it: `attach(servopin, 500, 2500)`. `turnangle` is degrees mapped linearly to pulse width; it is not
-    calibrated to real wheel angle (the real max steer angle is still unmeasured; this is how to measure it).
-12. `Wire.begin()` on the master claims pins 21/22 while pin 22 is the mode switch. The master has no I2C devices;
-    remove it. It works only because `turning_setup()` reconfigures pin 22 afterwards.
-13. Dead or stale code: `bluetooth.cpp` checks `lcurrentState`/`ucurrentState` globals that nothing updates (the
-    real limit messages come from `lift_lower_limit.cpp`/`lift_upper_limit.cpp`, which shadow them with locals);
-    `isOn` is `int` on the master and `bool` on the sensor board (unused); `movingmode` is always 0; `lastBTPrint`
-    unused. GPIO 2 (RPWM) is a strapping pin and GPIO 14 pulses at boot (GUESS: check for a brake twitch at power-up).
-    The relay forgets its state on a reset (comes up forward).
+Correctness: 10. Throttle range cliff: a pulse outside 980 to 1517 gives 0 instead of clamping, so pulling the stick slightly past
+980 drops the throttle to zero. GUESS: this is why the ROS firmware widened it to 900/2100. The brake threshold
+(> 2000) sits at the edge of a normal 1000 to 2000 channel and works only because this transmitter exceeds 2000
+(unmeasured). 11. Steering range: `steering.attach(servopin, 1000, 2000)` but pulses of 500 to 2500 are written. FROM MEMORY,
+ESP32Servo clamps `writeMicroseconds` to the attach limits (check the library source). If so, RC steering
+saturates at stick 1250/1750 (2x gain) and autonomous saturates at +/-15 deg, not +/-30. Fix, if the servo
+tolerates it: `attach(servopin, 500, 2500)`. `turnangle` is degrees mapped linearly to pulse width; it is not
+calibrated to real wheel angle (the real max steer angle is still unmeasured; this is how to measure it). 12. `Wire.begin()` on the master claims pins 21/22 while pin 22 is the mode switch. The master has no I2C devices;
+remove it. It works only because `turning_setup()` reconfigures pin 22 afterwards. 13. Dead or stale code: `bluetooth.cpp` checks `lcurrentState`/`ucurrentState` globals that nothing updates (the
+real limit messages come from `lift_lower_limit.cpp`/`lift_upper_limit.cpp`, which shadow them with locals);
+`isOn` is `int` on the master and `bool` on the sensor board (unused); `movingmode` is always 0; `lastBTPrint`
+unused. GPIO 2 (RPWM) is a strapping pin and GPIO 14 pulses at boot (GUESS: check for a brake twitch at power-up).
+The relay forgets its state on a reset (comes up forward).
 
 ### Carry over to the rebuild
+
 - Keep: the RC pin map, the override switch living on the master, tilt alarms, the Bluetooth debug idea, the 10-byte
   idea (but with magic byte, sequence and CRC), and the brake actuator logic (extend to limit switch).
 - Replace `pulseIn` with edge-timestamp reads (interrupt or capture) so no RC read ever blocks the loop.
@@ -975,6 +1055,7 @@ Correctness:
 - A speed-to-throttle map is new work (open loop); it needs calibration against real speed.
 
 ### Torque is low (side note, cause not confirmed; motor controller and motor models unknown)
+
 1. Software cap (read from code): normal mode multiplies the DAC by 0.75, so the throttle never goes past about
    191/255, roughly 2.5 V on a 3.3 V DAC. Test: raise or remove the 0.75.
 2. DAC ceiling (GUESS): the ESP32 DAC tops out near 3.3 V (a bit under in practice) and is a weak source. A hall-type
@@ -989,6 +1070,7 @@ Correctness:
    controller's current limit is the first thing to check.
 
 ### Bench tests to confirm the above (when the rover is available, wheels off the ground)
+
 - Sensor serial monitor: is `Slow Loop Detected` printing constantly? (item 8)
 - Bluetooth `g` with the rover level, nose up, nose down: does level read ~0 and are both directions symmetric?
 - Force danger (tilt past 25 deg or fake the flag) and watch the throttle pin with a multimeter or scope. (item 1)
@@ -996,14 +1078,15 @@ Correctness:
 - Multimeter on the throttle wire at full stick, with and without the 0.75. (torque 1 and 2)
 - Print raw pulse widths for every channel at min, neutral and max. (items 10, 11)
 
-
 ## Old micro-ROS firmware review (2026-11-08)
+
 Read from source only (nothing compiled or run). Labels: "read from code", GUESS, or "from memory" (library
 behavior I recalled, not checked). Upload names: master `globals_281233.h` / `globals_9925e1.cpp` (control state),
 sensor `globals_f7cd16.h` / `globals_511bd6.cpp`, module files with a `_1` suffix, and `gps_sensor.cpp` (sensor side
 only; the pre-ROS firmware had no GPS module). This firmware "does not work at all"; the likely reasons are first.
 
 ### Architecture
+
 - Same two-board split as pre-ROS, plus micro-ROS. Each ESP talks micro-ROS over its UART0 (RX0/TX0,
   `set_microros_transports()`, 115200 from memory of the library default): master -> Pi UART0, sensor -> Pi UART2
   (from code comments; Pi overlay names still unchecked). The Pi therefore needs two agents.
@@ -1019,6 +1102,7 @@ only; the pre-ROS firmware had no GPS module). This firmware "does not work at a
   failsafe (throttle to the brake position) as well.
 
 ### ROS interface
+
 - Master subscribes `cmd_vel` (Twist): `linear.x` -> speed (m/s), `angular.z * 180/pi` -> turn angle in degrees,
   `linear.z` -> lift speed (a hack). Subscribes `rover/danger` (Bool, stays latched until the next message).
   Publishes `rover/master_debug` (String, 4 Hz: pulse widths, danger/warning, loop times).
@@ -1029,6 +1113,7 @@ only; the pre-ROS firmware had no GPS module). This firmware "does not work at a
   `SerialBT.connected()` guard, non-blocking debounce).
 
 ### Control logic (master, `getControlState()` in `globals_9925e1.cpp`)
+
 - Mode from pin 22: <= 1400 us manual, >= 1600 autonomous, in between = manual; 3 consecutive new frames to switch;
   stale = manual. This confirms pin 22 is the manual/auto switch (transmitter channel number still unknown).
 - `danger` = ROS danger OR sensor danger OR no sensor packet ever seen OR packet older than 350 ms. In danger:
@@ -1050,12 +1135,14 @@ only; the pre-ROS firmware had no GPS module). This firmware "does not work at a
   If my pre-ROS clamp theory holds, the old firmware had 2x gain, so steering feel differs between versions.
 
 ### Fixed vs pre-ROS
+
 Non-blocking interrupt RC reads with freshness; framed, CRC'd safety packet with a heartbeat timeout; no `delay()` in
 control; reverse relay uses an edge detect plus 500 ms lockout instead of `delay(500)`; relay forced off on danger,
 brake request or lost reverse signal; mode switch has hysteresis and confirmation; auto-brake on zero speed; MPU
 `begin()` only on (re)connect (the per-loop reset is gone); Bluetooth replies one-shot; sensor-side agent reconnect.
 
 ### Why it probably does not work (most likely first)
+
 1. GPS pin clash (sensor board). `Serial1` (link to master) and `gpsSerial` (UART2, `RXD2` 16 / `TXD2` 17, "not sure
    these are right") are both mapped to pins 16/17. `gps_setup()` runs after `Serial1.begin()`, and a pad can have
    only one output signal, so GPS UART2's TX probably takes pin 17 and the safety packets never leave the sensor
@@ -1075,48 +1162,39 @@ brake request or lost reverse signal; mode switch has hysteresis and confirmatio
    (A related risk: UART0 is also USB, so any stray print corrupts the micro-ROS stream.)
 
 ### Other problems (read from code, none tested)
-Safety and behavior:
-6. Unit bug: `angular.z` is a yaw RATE in rad/s but is converted to a steering ANGLE with `* 180/pi`. wz 1.0 gives
-   57 deg, clamped to 30, so it saturates at wz ~0.52. The Pi must send a real steering angle: delta =
-   atan(wheelbase * wz / v), as the plan already says (kinematics on the Pi). Sign is also unchecked: ROS +wz is left
-   and +turn gives a higher pulse; whether a higher pulse is left or right on this servo is unverified (GUESS: inverted).
-7. Throttle map discontinuity (manual, arithmetic from code, with the 3.3 V DAC): `pwmMin/pwmMax` are 900/2100 but
-   neutral is a +/-60 us dead band around 1500. Neutral does NOT map to 0, so the DAC steps from 0 to ~105 (1.4 V)
-   at 1440 us and rises to 191 (2.5 V) at 900 us (x0.75 mode). On the brake side, 1560 to 1850 us (before the brake
-   threshold) still outputs 86 down to 40 (1.1 V to 0.5 V). This answers the earlier "900/2100, not investigated" note.
-   Measure the real channel before fixing.
-8. Autonomous speed range: Nav2 `vx_max` 0.65 gives DAC ~110 (1.4 V), under half scale, and below ~0.3 m/s the voltage
-   is probably under the controller's activation point (GUESS ~1 V, unmeasured). So autonomous torque and speed will
-   feel even lower than manual (see the torque side note). Open loop, so it needs a speed-vs-DAC calibration.
-9. Direction changes: the relay flips while the DAC is still non-zero (no stop, settle, switch, go sequence), and
-   speeds between -0.1 and -0.05 give relay forward but throttle > 0, so small backward commands drive FORWARD.
-   Smac with Reeds-Shepp will command reversals constantly.
-10. Autonomous brake release: when speed goes from ~0 to > 0.05, the DAC is applied the same moment the brake starts
-    its fixed 2 s retract (the throttle fights the brake). Pre-ROS could not do this (one stick).
-11. Pressing the brake while in manual reverse forces the relay off, so the NEXT throttle goes forward (state lost).
-12. Lift regressions: `safeLift = fresh ? lift : 0` and 0 < 1400 means a stale lift channel drives the lift DOWN
-    continuously (pre-ROS stopped), and the "no throttle" lift interlock from pre-ROS is gone. Limit switches still
-    do not stop the lift.
-13. A latent race in `getRcInputState()`: `now = micros()` is read BEFORE the interrupt snapshot, so an ISR in that
-    gap gives `now - at` a huge unsigned value and one false "stale". Rare (GUESS: seconds to minutes), but a false
-    stale on the reverse channel turns the relay off. Fix: take `now` after the snapshot. `getControlState()` also
-    keeps static mode state and is called from both cores without a lock.
 
-Sensor data for the Pi (these will bite the EKF):
-14. IMU: no `header.stamp` and no `frame_id`, so the Pi bridge must stamp it. Covariances are all zero except
-    `orientation_covariance[8] = -1` (REP-145 says element 0 = -1 for "no orientation"). The orientation is built from
-    `Roll_Angle`/`Pitch_Angle`, which are unsigned, integer, offset-hacked tilt values, so it is wrong in sign and
-    quantized: do not fuse it, fuse yaw rate only. GUESS: the pre-ROS roll arithmetic implies the board is mounted z-down,
-    so rest `acceleration_z` is about -9.8 and `yaw_rate` is sign-flipped relative to ROS (z up). CHECK the raw values
-    at rest. Also 10 Hz here vs 100 Hz in the sim, with the MPU's 5 Hz filter on.
-15. GPS: the same fix is re-published at 10 Hz (the GPS only updates at ~1 Hz by default), so the EKF would count
-    repeats as independent. No timestamp. Covariance is `hdop^2`, but HDOP is dimensionless, not meters (real error is
-    roughly HDOP x ~2.5 to 5 m, GUESS). `gps.location.isValid()` may stay true after a fix is lost (from memory, check
-    `age()`). The topic is `rover/gps`; the sim EKF expects `gps/fix`.
-16. `gyro()`: `getEvent()` (from memory) always returns true, so an unplugged MPU is never detected and the tilt
-    flags freeze. `battery()` builds a `String` every loop (kHz), so heap churn on a long run (GUESS).
+Safety and behavior: 6. Unit bug: `angular.z` is a yaw RATE in rad/s but is converted to a steering ANGLE with `* 180/pi`. wz 1.0 gives
+57 deg, clamped to 30, so it saturates at wz ~0.52. The Pi must send a real steering angle: delta =
+atan(wheelbase * wz / v), as the plan already says (kinematics on the Pi). Sign is also unchecked: ROS +wz is left
+and +turn gives a higher pulse; whether a higher pulse is left or right on this servo is unverified (GUESS: inverted). 7. Throttle map discontinuity (manual, arithmetic from code, with the 3.3 V DAC): `pwmMin/pwmMax` are 900/2100 but
+neutral is a +/-60 us dead band around 1500. Neutral does NOT map to 0, so the DAC steps from 0 to ~105 (1.4 V)
+at 1440 us and rises to 191 (2.5 V) at 900 us (x0.75 mode). On the brake side, 1560 to 1850 us (before the brake
+threshold) still outputs 86 down to 40 (1.1 V to 0.5 V). This answers the earlier "900/2100, not investigated" note.
+Measure the real channel before fixing. 8. Autonomous speed range: Nav2 `vx_max` 0.65 gives DAC ~110 (1.4 V), under half scale, and below ~0.3 m/s the voltage
+is probably under the controller's activation point (GUESS ~1 V, unmeasured). So autonomous torque and speed will
+feel even lower than manual (see the torque side note). Open loop, so it needs a speed-vs-DAC calibration. 9. Direction changes: the relay flips while the DAC is still non-zero (no stop, settle, switch, go sequence), and
+speeds between -0.1 and -0.05 give relay forward but throttle > 0, so small backward commands drive FORWARD.
+Smac with Reeds-Shepp will command reversals constantly. 10. Autonomous brake release: when speed goes from ~0 to > 0.05, the DAC is applied the same moment the brake starts
+its fixed 2 s retract (the throttle fights the brake). Pre-ROS could not do this (one stick). 11. Pressing the brake while in manual reverse forces the relay off, so the NEXT throttle goes forward (state lost). 12. Lift regressions: `safeLift = fresh ? lift : 0` and 0 < 1400 means a stale lift channel drives the lift DOWN
+continuously (pre-ROS stopped), and the "no throttle" lift interlock from pre-ROS is gone. Limit switches still
+do not stop the lift. 13. A latent race in `getRcInputState()`: `now = micros()` is read BEFORE the interrupt snapshot, so an ISR in that
+gap gives `now - at` a huge unsigned value and one false "stale". Rare (GUESS: seconds to minutes), but a false
+stale on the reverse channel turns the relay off. Fix: take `now` after the snapshot. `getControlState()` also
+keeps static mode state and is called from both cores without a lock.
+
+Sensor data for the Pi (these will bite the EKF): 14. IMU: no `header.stamp` and no `frame_id`, so the Pi bridge must stamp it. Covariances are all zero except
+`orientation_covariance[8] = -1` (REP-145 says element 0 = -1 for "no orientation"). The orientation is built from
+`Roll_Angle`/`Pitch_Angle`, which are unsigned, integer, offset-hacked tilt values, so it is wrong in sign and
+quantized: do not fuse it, fuse yaw rate only. GUESS: the pre-ROS roll arithmetic implies the board is mounted z-down,
+so rest `acceleration_z` is about -9.8 and `yaw_rate` is sign-flipped relative to ROS (z up). CHECK the raw values
+at rest. Also 10 Hz here vs 100 Hz in the sim, with the MPU's 5 Hz filter on. 15. GPS: the same fix is re-published at 10 Hz (the GPS only updates at ~1 Hz by default), so the EKF would count
+repeats as independent. No timestamp. Covariance is `hdop^2`, but HDOP is dimensionless, not meters (real error is
+roughly HDOP x ~2.5 to 5 m, GUESS). `gps.location.isValid()` may stay true after a fix is lost (from memory, check
+`age()`). The topic is `rover/gps`; the sim EKF expects `gps/fix`. 16. `gyro()`: `getEvent()` (from memory) always returns true, so an unplugged MPU is never detected and the tilt
+flags freeze. `battery()` builds a `String` every loop (kHz), so heap churn on a long run (GUESS).
 
 ### Carry over / rebuild notes (new ones; the pre-ROS list still applies)
+
 - Keep: ISR RC reads with freshness, the framed CRC'd safety packet plus heartbeat, mode hysteresis and confirmation,
   brake-always-wins, ROS-loss => zero speed plus brake, control independent of the comms task, loop-time
   instrumentation. These work as designs and do not depend on micro-ROS, so they carry straight into the plain-serial plan.
@@ -1131,6 +1209,7 @@ Sensor data for the Pi (these will bite the EKF):
   receiver's failsafe settings.
 
 ## Next steps (in order)
+
 1. Add realistic IMU noise in the sim. On hardware: a real heading source for the map filter, drop
    `gps_covariance.py` and the `gps/fix_cov` remap (a real GPS driver reports its own covariance), and
    measure rf2o's real error to replace the placeholder variances in `odom_covariance.py`.
@@ -1144,15 +1223,15 @@ Sensor data for the Pi (these will bite the EKF):
    a. RC reads, mode switch, throttle, brake, manual reverse, and MODE are done, and steering, lift, and sensor danger remain
    b. Sensor sketch: `LIFT` (limit-switch levels), `BAT`, tilt, same `FILL IN` block.
    c. Pi side: publish `MODE`, add `IMU`/`GPS`/`DANGER` to the spec, a hardware launch file (without the
-      sim-only nodes), then the bench checklist in "Pre-ROS firmware review".
+   sim-only nodes), then the bench checklist in "Pre-ROS firmware review".
 4. Stuck detector and recovery (needs a second signal besides rf2o speed), the remaining roaming abort
    causes, and a retest of the inflation sliders.
 
 - New chat: paste DEVLOG.md first, plus the file being edited. For the firmware also paste `protocol/SPEC.md`
   and `protocol/cpp/protocol.h`.
 
-
 ## Ideas for later (not committed to)
+
 - SLAM works in the sim. Open question: how it coexists with the GPS EKF (both want `map -> odom`), and
   whether a 2D LIDAR maps well on rough forest terrain. Keep the lift down.
 - Portfolio: Gazebo can't run in a browser. Use screen-recorded video, a README with an architecture
