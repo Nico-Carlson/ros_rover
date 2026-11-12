@@ -51,3 +51,20 @@ def make_cmd(speed, steer_deg, lift):
 
 def make_lift(down, up):
     return make_line("LIFT", int(bool(down)), int(bool(up)))
+
+
+def parse_mode(fields):
+    """fields = the list after the 'MODE' name.
+    Returns (autonomous, danger, warning, brake) as bools, or None if malformed."""
+    if len(fields) != 4:
+        return None
+
+    flags = []
+    for f in fields:
+        if f == "0":
+            flags.append(False)
+        elif f == "1":
+            flags.append(True)
+        else:
+            return None
+    return tuple(flags)
