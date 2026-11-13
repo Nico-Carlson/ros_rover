@@ -32,6 +32,7 @@ class EspBridge(Node):
         self.lift_pub = self.create_publisher(Bool, "/lift_down", 10)
         self.bat_pub = self.create_publisher(Float32, "/battery_voltage", 10)
 
+        # MODE from the master ESP, published as separate Bool topics.
         self.mode_timeout = self.get_parameter("mode_timeout").value
         self.mode = (False, False, False, False)  # autonomous, danger, warning, brake
         self.mode_time = None
@@ -40,10 +41,11 @@ class EspBridge(Node):
         self.warning_pub = self.create_publisher(Bool, "/rover/warning", 10)
         self.brake_pub = self.create_publisher(Bool, "/rover/brake", 10)
         self.link_pub = self.create_publisher(Bool, "/rover/esp_link_ok", 10)
-        self.create_timer(0.1, self.on_mode_timer)  # publish the MODE topics at 10 Hz
 
         self.create_timer(0.02, self.on_poll)  # read the serial port at 50 Hz
         self.create_timer(0.1, self.on_lift_timer)  # publish /lift_down at 10 Hz
+        self.create_timer(0.1, self.on_mode_timer)  # publish the MODE topics at 10 Hz
+
         self.wheelbase = self.get_parameter("wheelbase").value
         self.max_steer_deg = self.get_parameter("max_steer_deg").value
         self.cmd_timeout = self.get_parameter("cmd_timeout").value
