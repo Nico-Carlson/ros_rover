@@ -4,13 +4,15 @@ Current state of the project for people working on it. For the full history and 
 instructions (and what to paste into a new chat), see `DEVLOG.md`. For the public overview, see `README.md`.
 
 ## What this is
+
 Autonomous Ackermann rover for forest navigation (data collection for another school's camera project).
 Modes: (1) navigate to a GPS pin avoiding obstacles, (2) roam inside a boundary, (3) get unstuck.
-Mapping is secondary. Everything below is tested in the Gazebo sim only; no hardware code exists yet.
+Mapping is secondary. The navigation stack is tested in the Gazebo sim only. The ESP32 firmware and the Pi serial bridge exist and are partly tested on the real rover (see "Firmware and bench notes"); nothing has driven yet.
 
 ## Stack
+
 - ROS 2 Jazzy + Gazebo Harmonic, Ubuntu 24.04 in a distrobox on Arch (Hyprland)
-- Hardware (planned): Pi 5, 2x ESP32 (Arduino IDE, C++), RPLIDAR S2, GPS, IMU, ultrasonics (removed from
+- Hardware: Pi 5, 2x ESP32 (Arduino IDE, C++), RPLIDAR S2, GPS, IMU, ultrasonics (removed from
   the real rover for now; simulated)
 - Pi code in Python, firmware in C++
 - Parts (from listing titles, specs from memory, NOT verified): HC-SR04 ultrasonics (5 V echo needs level
@@ -19,7 +21,9 @@ Mapping is secondary. Everything below is tested in the Gazebo sim only; no hard
 - The real rover has NO wheel encoders. Wheel odometry exists only in the sim and is not fused.
 
 ## Status
+
 Done in the sim:
+
 - Robot model, Gazebo sim, obstacle world, simulated ultrasonics, SLAM (separate mode)
 - Dual EKF: odom filter (IMU + rf2o) and map filter (adds noisy GPS via navsat_transform)
 - rf2o LIDAR odometry, scan gating (lift down only), Nav2 (Smac Hybrid + MPPI, rolling costmaps)
@@ -27,25 +31,26 @@ Done in the sim:
 - Ultrasonic range layer in both Nav2 costmaps (sim converter `us_to_range`); LIDAR is blind below ~0.57 m
 - rf2o speed gate and 22 extra sim trees (localization no longer blows up); `/patrol_status` topic; canvas slab
   shows only while drawing
-
-  - Firmware (2026-11-08): goal is manual-only with the new ROS-era ESP32 code first (the RC switch overrides Nav2, decided in the master ESP), then add Nav2. Plain UART serial + a Python bridge instead of micro-ROS (the old micro-ROS build lagged badly, cause unknown). First test uses placeholder pins; module files and real pins not yet reviewed. Details: DEVLOG "Firmware approach".
+- Firmware and hardware (2026-11-12): plain UART serial between the Pi and two ESP32s (text lines with a checksum; `protocol/SPEC.md` is the source of truth) instead of micro-ROS, which lagged badly in the old build (cause never found). Both sketches (`firmware/master_serial`, `firmware/sensor_serial`) are written and the pure logic is tested on the PC. On the real rover so far: RC pulses measured, the receiver failsafe set (loss of the transmitter brakes), the sensor-to-master safety link works, and the tilt sensor is calibrated. NOT done: every motor, actuator and relay output (`ENABLE_OUTPUTS` is 0), the Pi link, GPS, and publishing `MODE` from `esp_bridge`. Details: DEVLOG "Bench session 2026-11-12" and "Output tests (PLAN)".
 - exec_depend entries added to rover_bringup and rover_description (rosdep check clean). On the Pi: rosdep install --from-paths src --ignore-src -r -y --skip-keys "cmake_modules ros_gz_sim ros_gz_bridge joint_state_publisher_gui"
 
 Open:
+
 - Stuck detector + recovery: skipped for now (decided); the roaming branch was merged without it.
 - Sliders reading real values at startup (they start at values hard-coded in control_panel.py).
 - Behavior when `/scan_filtered` goes silent (Nav2 would look like "no obstacles")
 - Real heading source for GPS fusion on hardware (the sim IMU is a perfect compass)
 - Realistic sim IMU noise; tune covariances against real data
-- Real measurements, ESP32 firmware (with command-timeout watchdog), Pi bridge, field testing
-- `rover_bringup/package.xml` probably lacks `exec_depend` entries (clean build on the Pi may fail)
+- Output tests on the real rover (staged plan in the DEVLOG), the Pi link, GPS wiring, `MODE` topics from `esp_bridge`, a hardware launch file, field testing
 
 ## Run it (sim)
+
 ```
 cd ~/rover_ws
 colcon build --packages-select rover_bringup     # after ANY edit; launch uses the installed copy
 ros2 launch rover_bringup sim_nav.launch.py
 ```
+
 One command starts: sim (0 s), us_to_range + rf2o + scan gate (10 s), EKFs (15 s), Nav2 (22 s), RViz (25 s), canvas (26 s), roam (30 s), panel (30 s). All delays are guesses. Nav2 needs ~30 s more
 to become active ("Managed nodes are active"). Gazebo runs server-only (no window): attach one with `gz sim -g` in another terminal.
 
@@ -61,6 +66,7 @@ to become active ("Managed nodes are active"). Gazebo runs server-only (no windo
 - `slam.launch.py` is NOT part of `sim_nav` and conflicts with the EKF (both publish `map -> odom`).
 
 ## Control panel and patrol
+
 - Panel (PyQt5) opens with `sim_nav`. Buttons: New Boundary, Start Patrol, Stop Patrol. Mode toggle
   (Point to point / Boundary) only greys out those buttons; it does not stop a running patrol.
 - Draw a boundary: press New Boundary (stops patrol, clears the old shape), set RViz Fixed Frame to `map`,
@@ -90,6 +96,7 @@ to become active ("Managed nodes are active"). Gazebo runs server-only (no windo
 - The panel shows /patrol_status in a label under the sliders. If no message arrives for 5 s (placeholder) it shows "no status (roam not running?)".
 
 ## Known roaming problems
+
 - Latest run: 34 succeeded, 5 aborted, 4 'Failed to make progress'. Remaining aborts: cancels (watchdog), 'Start occupied' next to trees, occasional planner timeouts.
 - Gazebo server-only (`-s`) gained only ~2% in `/scan` rate; kept for convenience.
 - `Failed to make progress` mid-route: the behavior tree clears the local costmap and retries, usually
@@ -97,6 +104,7 @@ to become active ("Managed nodes are active"). Gazebo runs server-only (no windo
 - `yaw_goal_tolerance` is 3.14 (committed). The heading hypothesis behind it is UNSUPPORTED by testing.
 
 ## Environment quirks
+
 - Login shell is fish, but ROS work happens in zsh (ROS has no fish setup script). Type `zsh` first.
 - zsh config is `~/.config/zsh/.zshrc` (ZDOTDIR), NOT `~/.zshrc`. `QT_QPA_PLATFORM=xcb` is set there so
   Gazebo/RViz run through XWayland.
@@ -109,6 +117,7 @@ to become active ("Managed nodes are active"). Gazebo runs server-only (no windo
   watch driving, `map` only to click boundary points.
 
 ## Workflow gotchas
+
 - Edit a package, then `colcon build --packages-select <pkg>` from `~/rover_ws`, then launch.
 - New package: open a new terminal (or `source ~/.config/zsh/.zshrc`).
 - Every new script goes in `install(PROGRAMS ...)` in `rover_bringup/CMakeLists.txt` and needs `chmod +x`.
@@ -136,24 +145,34 @@ to become active ("Managed nodes are active"). Gazebo runs server-only (no windo
 - `ros2 topic echo` truncates arrays to 128 entries: use `--truncate-length 0` (count rays with
   `grep -o inf | wc -l`).
 
+## Firmware and bench notes
+
+- Layout: `protocol/` is NOT a ROS package (`protocol.py`, `bridge.py`, `kinematics.py`, `cpp/`, tests). `firmware/master_serial/` and `firmware/sensor_serial/` hold COPIES of the `protocol/cpp/` files they need; re-copy after any change.
+- Tests: `cd ~/rover_ws/protocol && python3 -m pytest -q` (run from inside `protocol/`). C++: `cd ~/rover_ws/protocol/cpp && g++ -Wall -o test_protocol test_protocol.cpp protocol.cpp watchdog.cpp drive.cpp reverse_guard.cpp mode_switch.cpp brake.cpp tilt.cpp safety_link.cpp && ./test_protocol | grep FAIL` (no output = pass).
+- Each sketch has a `FILL IN` block at the top for pins, pulse ranges and thresholds. `ENABLE_OUTPUTS` 0 in the master means no motor pin is touched.
+- USB and the Pi link share UART0: unplug the Pi to flash, and set `DEBUG_PRINT` to 0 before wiring the Pi.
+- RC pulses measured 2026-11-12 (us): steer ch1 983 / 1511 / 2051 (left / rest / right); throttle+brake ch2 1001 (full throttle) / 1554 rest / 2061 (brake); lift ch6 983 down / 1515 / 2048 up; mode ch5 982 / 1514 / 2048 (up = autonomous); reverse ch7 about 979 off / 2045 held. Proposed constants from these: `THROTTLE_PULSE_MIN` 1010, `THROTTLE_PULSE_MAX` 1500, `BRAKE_PULSE_MIN` 1900, `REVERSE_PULSE_MIN` 1700 (confirm they are in the sketch).
+- Failsafe: with the transmitter off the receiver keeps sending centred pulses, so the master never sees "no signal". The transmitter's failsafe is therefore part of the safety design: ch2 set to the brake end (verified, under 1 s), ch7 set to about 980. Mode ch5 drops to the dead zone, which is manual, so a lost transmitter can never leave the rover in autonomous.
+- Safety link (sensor to master, pins 16/17, one way, shared ground): 4-byte packet at 10 Hz (magic, sequence, flags, CRC-8). Danger and warning hold until the next good packet. Danger stops and brakes AUTONOMOUS driving only; manual ignores it. Stale (350 ms, PLACEHOLDER) only shows in the debug line.
+- Tilt sensor: the MPU6050 is mounted upside down about the X axis, so the Y and Z signs are flipped and level offsets are applied in the sensor sketch's `FILL IN` block.
+
 ## Frames and rules
+
 - `base_footprint`: on the ground under the rear axle center. `base_link`: one wheel radius above it
   (X forward, Y left, Z up). `lidar_link` rides on `lift_platform` (prismatic `lift_joint`).
 - Drive and navigate only with the lift fully down. The lift has limit switches only (no position feedback).
 - Ackermann cannot turn in place: always send forward speed with turn rate.
-- The sim plugin keeps the last `/cmd_vel` until a new one arrives. The real firmware needs a
-  command-timeout watchdog.
+- The sim plugin keeps the last `/cmd_vel` until a new one arrives. The real firmware has one: the master ignores a `CMD` older than 500 ms (PLACEHOLDER) and `esp_bridge` sends speed 0 when `/cmd_vel` is older than 0.5 s. Untested on hardware.
 - The LIDAR scans a flat plane (~0.57 m in the sim). Keep the GPS, IMU, and any mast out of that plane.
   Anything lower is a blind spot for the 2D LIDAR.
 - Ultrasonics (sim): one front, one rear and four corner sensors at 45 deg outward, narrow cones, so the sides
   between corners are not covered. Real firmware should publish `sensor_msgs/Range` on the `/us_range/*` topics.
 - Datum (45.0, -110.0) lives in THREE places that must match: world file, `ekf.yaml`, `boundary_canvas.py`
   parameters. All placeholders until the real test site is chosen.
-- Hardware: leave `sim_lift_signal.py`, `gps_covariance.py` (and the `gps/fix_cov` remap) and `us_to_range.py` out of the Pi
-  launch; the ESP32 publishes `/lift_down` and the Pi bridge must treat a missing signal as "lift not down".
-  `lidar_odom.launch.py` has no argument for that yet.
+- Hardware: leave `sim_lift_signal.py`, `gps_covariance.py` (and the `gps/fix_cov` remap) and `us_to_range.py` out of the Pi launch; the ESP32 publishes `/lift_down` and the Pi bridge must treat a missing signal as "lift not down". `lidar_odom.launch.py` has no argument for that yet. esp_bridge takes their place; it is not in any launch file yet.
 
 ## Data flow (sim)
+
 Gazebo -> ros_gz_bridge -> `/scan`, `/imu`, `/gps/fix`, `/odom` (unused by the EKFs), `/joint_states`, `/us/*`.
 `/scan` -> `scan_gate` -> `/scan_filtered` -> rf2o -> `/odom_rf2o` -> `odom_covariance` -> `/odom_rf2o_cov`.
 EKFs: `ekf_filter_node` (odom frame, `/odometry/local`, owns `odom -> base_footprint`) and
@@ -164,30 +183,39 @@ Ultrasonics: `/us/*` (5-ray scans) -> `us_to_range` (sim only) -> `/us_range/*` 
 costmaps (between `obstacle_layer` and `inflation_layer`).
 
 ## Placeholders (replace with real values)
-| Item | Value | Status |
-|---|---|---|
-| Wheelbase, wheel radius/width, chassis L x W x H | 0.686, 0.15875/0.1016, 1.118 x 0.562 x 0.457 | measured |
-| Track width | 0.559 | measured, nearly equal to chassis width, recheck |
-| Ultrasonic mounting height | 0.0762 m above the wheel tops | measured |
-| Total mass | ~30 kg | placeholder (xacro `chassis_mass` 24.0) |
-| Ground clearance | 0.08 | placeholder |
-| Max steer angle | 0.7 rad | placeholder |
-| `minimum_turning_radius` | 0.8 | derived from the placeholder steer angle |
-| MPPI speeds | `vx_max` 0.65, `vx_min` -0.45, `wz_max` 1.0 | untested guesses |
-| Goal tolerances | `xy` 0.5, `yaw` 3.14 | tuned in the sim only |
-| Costmap `inflation_radius` | 1.5 | placeholder (old project); `cost_scaling_factor` 1.0 |
-| Lift platform mass/size/speed, `lift_travel` | 5 kg / 0.4 x 0.4 m / 0.05 m/s / 1.2192 m | placeholder |
-| Sensor positions, ultrasonic angles/cone/range | see xacro (ultrasonics: `us_side_y` 0.28, `us_angle` pi/4) | placeholder |
-| Sim GPS noise and covariance | 1.5 m / 2.25 m^2 | placeholder |
-| rf2o speed / yaw-rate variance | 0.01 / 0.01 | placeholder guesses |
-| Scan gate `lift_timeout`, lift down threshold | 1.0 s, 0.01 m | placeholder |
-| `sim_nav` start delays | 10, 15, 22, 25, 26, 30, 30 s | guesses |
-| Nav2 footprint | [0.902, +-0.33] to [-0.216, +-0.33] | derived from the xacro, depends on track width |
-| rf2o gate limits | 1.5 m/s, 2.0 rad/s | placeholder (generous guesses) |
-| Extra sim trees | `tree_5` to `tree_26` | placeholder positions |
-| Range layer (`phi`, thresholds, `clear_on_max_reading`) | 1.2, 0.2 / 0.8, true | from memory, not tuned |
+
+| Item                                                    | Value                                                      | Status                                                           |
+| ------------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------- |
+| Wheelbase, wheel radius/width, chassis L x W x H        | 0.686, 0.15875/0.1016, 1.118 x 0.562 x 0.457               | measured                                                         |
+| Track width                                             | 0.559                                                      | measured, nearly equal to chassis width, recheck                 |
+| Ultrasonic mounting height                              | 0.0762 m above the wheel tops                              | measured                                                         |
+| Total mass                                              | ~30 kg                                                     | placeholder (xacro `chassis_mass` 24.0)                          |
+| Ground clearance                                        | 0.08                                                       | placeholder                                                      |
+| Max steer angle                                         | 0.7 rad                                                    | placeholder                                                      |
+| `minimum_turning_radius`                                | 0.8                                                        | derived from the placeholder steer angle                         |
+| MPPI speeds                                             | `vx_max` 0.65, `vx_min` -0.45, `wz_max` 1.0                | untested guesses                                                 |
+| Goal tolerances                                         | `xy` 0.5, `yaw` 3.14                                       | tuned in the sim only                                            |
+| Costmap `inflation_radius`                              | 1.5                                                        | placeholder (old project); `cost_scaling_factor` 1.0             |
+| Lift platform mass/size/speed, `lift_travel`            | 5 kg / 0.4 x 0.4 m / 0.05 m/s / 1.2192 m                   | placeholder                                                      |
+| Sensor positions, ultrasonic angles/cone/range          | see xacro (ultrasonics: `us_side_y` 0.28, `us_angle` pi/4) | placeholder                                                      |
+| Sim GPS noise and covariance                            | 1.5 m / 2.25 m^2                                           | placeholder                                                      |
+| rf2o speed / yaw-rate variance                          | 0.01 / 0.01                                                | placeholder guesses                                              |
+| Scan gate `lift_timeout`, lift down threshold           | 1.0 s, 0.01 m                                              | placeholder                                                      |
+| `sim_nav` start delays                                  | 10, 15, 22, 25, 26, 30, 30 s                               | guesses                                                          |
+| Nav2 footprint                                          | [0.902, +-0.33] to [-0.216, +-0.33]                        | derived from the xacro, depends on track width                   |
+| rf2o gate limits                                        | 1.5 m/s, 2.0 rad/s                                         | placeholder (generous guesses)                                   |
+| Extra sim trees                                         | `tree_5` to `tree_26`                                      | placeholder positions                                            |
+| Range layer (`phi`, thresholds, `clear_on_max_reading`) | 1.2, 0.2 / 0.8, true                                       | from memory, not tuned                                           |
+| Safety link baud / timeout                              | 115200 / 350 ms                                            | placeholder (timeout from the old firmware)                      |
+| Command timeout (master and `esp_bridge`)               | 500 ms                                                     | placeholder                                                      |
+| Reverse settle time                                     | 500 ms                                                     | placeholder                                                      |
+| Brake retract time                                      | 2000 ms                                                    | placeholder                                                      |
+| `esp_bridge` steering clamp                             | 30 deg                                                     | placeholder                                                      |
+| Drive full scale / stop band                            | 1.5 m/s / 0.05 m/s                                         | placeholder                                                      |
+| RC pulse constants (throttle, brake, reverse)           | 1010 / 1500, 1900, 1700                                    | proposed from the 2026-11-12 measurements, confirm in the sketch |
 
 ## Open questions
+
 - Exact ultrasonic model, RPLIDAR S2 variant (30 m or 18 m), real GPS antenna position (needs a mast, out
   of the LIDAR plane), real mass / clearance / steer angle / lift speed.
 - Do the real wheels sit outside the chassis?
@@ -197,8 +225,10 @@ costmaps (between `obstacle_layer` and `inflation_layer`).
   per scan) and Smac's ~29 s configure are unmeasured.
 - Why rf2o spikes (scan timing?)
 - Stuck detector needs a second signal besides rf2o speed (rf2o fails in empty scenes and spikes).
+- Output tests (throttle, brake, steering, lift, reverse relay) are not done; the staged plan is in the DEVLOG. Also unknown: where the GPS wires land, which BTS7960 pin extends the brake, and whether the DAC reaches full throttle.
 
 ## Repo layout
+
 - Repo: github.com/Nico-Carlson/ros_rover (private), local folder `~/rover_ws`
 - `src/rover_basics`: ament_python practice package
 - `src/rover_description`: ament_cmake. `urdf/rover.urdf.xacro` (model), `urdf/rover.gazebo.xacro` (Gazebo
@@ -208,8 +238,10 @@ costmaps (between `obstacle_layer` and `inflation_layer`).
   - `config/`: `slam_mapping.yaml`, `ekf.yaml`, `nav2_params.yaml`, `boundary.yaml` (git-ignored)
   - `launch/`: `slam`, `ekf`, `lidar_odom`, `nav2`, `sim_nav`
   - `scripts/`: `gps_covariance`, `odom_covariance`, `scan_gate`, `sim_lift_signal`, `boundary_canvas`,
-    `roam`, `control_panel`, `us_to_range`
+    `roam`, `control_panel`, `us_to_range`, `esp_bridge`
 - `src/rf2o_laser_odometry`: cloned separately, git-ignored, NOT in this repo. Fetch:
   `cd ~/rover_ws/src && git clone -b ros2 https://github.com/MAPIRlab/rf2o_laser_odometry.git`, then
   `colcon build --packages-select rf2o_laser_odometry`
+- `protocol/` (not a ROS package): serial protocol (`protocol.py`, `bridge.py`, `kinematics.py`, `cpp/`) with its tests and `SPEC.md`
+- `firmware/master_serial/`, `firmware/sensor_serial/`: the two ESP32 sketches (compile with the Arduino IDE)
 - Measurements live as `xacro:property` values at the top of the xacro. Edit those, not the geometry.

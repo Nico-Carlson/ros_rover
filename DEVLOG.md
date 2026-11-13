@@ -12,8 +12,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 ## Stack
 
 - ROS 2 Jazzy + Gazebo Harmonic, Ubuntu 24.04 in a distrobox on Arch (Hyprland)
-- Hardware: Pi 5, 2x ESP32 (Arduino IDE, C++), RPLIDAR S2, GPS, IMU (MPU6050 per old
-  comments, unverified), 6 ultrasonics (removed from the real rover for now; simulated)
+- Hardware: Pi 5, 2x ESP32 (Arduino IDE, C++), RPLIDAR S2, GPS, IMU (MPU6050, it answered on the sensor board 2026-11-12), 6 ultrasonics (removed from the real rover for now; simulated)
 - Pi code in Python, firmware in C++
 
 ## Environment quirks
@@ -776,9 +775,8 @@ unvisited cells N`. States: `No boundary`, `Stopped`, `Patrolling`, `Patrolling 
   `LiftState` (`lift_down` true only if the latest LIFT line is under `timeout` 1.0 s old, down=1, up=0;
   malformed lines ignored). `fake_esp.py` and `try_bridge.py` are manual tools for a `socat` virtual cable.
 - Tests (run from INSIDE `protocol/`, since running pytest from `~/rover_ws` also collects the failing
-  `rover_basics` flake8 test): `cd ~/rover_ws/protocol && python3 -m pytest -q` (20 tests, includes
-  `test_bridge.py`, which starts its own `socat`). C++: `cd cpp && g++ -Wall -o test_protocol
-test_protocol.cpp protocol.cpp && ./test_protocol`.
+  `rover_basics` flake8 test): `cd ~/rover_ws/protocol && python3 -m pytest -q` (43 tests, includes
+  `test_bridge.py`, which starts its own `socat`). C++: `cd ~/rover_ws/protocol/cpp && g++ -Wall -o test_protocol test_protocol.cpp protocol.cpp watchdog.cpp drive.cpp reverse_guard.cpp mode_switch.cpp brake.cpp tilt.cpp safety_link.cpp && ./test_protocol | grep FAIL` (no output = no failures)
 - Needs `sudo apt install python3-serial socat` (pip is not installed in the distrobox).
 - Verified on the PC only (virtual serial cable): good lines arrive, junk and corrupted lines are dropped and
   the link recovers, CMD reaches the ESP, a silent ESP makes `lift_down` false. UNTESTED ON HARDWARE.
@@ -857,7 +855,7 @@ Safety link (sensor -> master, 4 bytes at 10 Hz, one-way on pins 16/17, shared g
 MPU6050 (sensor board):
 
 - At first `mpu_ok=0` (so danger=1 after 350 ms, by design). It worked after its power and ground were reconnected, so that connection is marginal; check it.
-- At rest it read roll -166.4, pitch -1.2: the board is mounted upside down about the X axis (GUESS from the numbers). Fixed with `MPU_SIGN_Y` = _**, `MPU_SIGN_Z` =**_ and level offsets roll _**, pitch**_ in the sketch's `FILL IN` block. Calibrated against the rover's resting position; confirm `danger=0 warn=0` at rest on the master's debug line, then check nose up/down and left/right symmetry.
+- At rest it read roll -166.4, pitch -1.2: the board is mounted upside down about the X axis (GUESS from the numbers). Fix: `MPU_SIGN_Y` and `MPU_SIGN_Z` flipped, plus a level offset for roll and pitch, all in the sensor sketch's `FILL IN` block (TODO: copy the four final numbers here). Calibrated against the rover's resting position. Not recorded: whether `danger=0 warn=0` at rest on the master's debug line, and the nose up/down and left/right symmetry check.
 
 Python side: `protocol.parse_mode` plus `protocol/test_mode.py` are done. `esp_bridge` does not publish `MODE` yet. PLAN: `/rover/autonomous`, `/rover/danger`, `/rover/warning`, `/rover/brake` (Bool) and `/rover/esp_link_ok` (false when no `MODE` for 0.5 s, PLACEHOLDER; a silent ESP also forces `autonomous` false).
 
@@ -872,22 +870,18 @@ Still UNTESTED ON HARDWARE: every output (throttle DAC, brake actuator and which
 - RC inputs: edge interrupts through `RcChannel` (`rc_channel.h`, kept in its own header because the Arduino IDE's
   auto-generated prototypes broke when the struct was in the .ino). One ISR, five channels (steer, throttle, lift,
   reverse, mode). Freshness check (100 ms) after the snapshot. `rc_clamp_map` saturates instead of returning 0, so
-  the old range cliff is gone. Pulse ranges are the old placeholders; measure on the bench.
+  Pulse ranges were measured on 2026-11-12 (see "Bench session 2026-11-12"). The sketch still has the old placeholders unless the proposed values from that section were applied: check the `FILL IN` block.
 - DECIDED: manual throttle is at 100% (`MANUAL_THROTTLE_SCALE` 1.0). The old firmware capped it at 0.75. The DAC may
   still not reach full throttle (3.3 V vs a controller that may want ~4 V; unverified, multimeter test).
 - Mode switch: `mode_switch` (dead zone 1401 to 1599 us now drops to manual immediately), stale = manual.
 - Brake: new `brake` module (extend until the limit switch, retract for a fixed 2000 ms, brake always wins), tested on
-  the PC. Manual brake request is ch2 pulse > 2000 us. PROPOSED, not confirmed: loss of RC signal = brake ON (the
-  old firmware released it and coasted). The receiver's own failsafe must also be set; a receiver that keeps
-  repeating the last pulse would never trigger "stale".
+  DECIDED and verified on hardware 2026-11-12: loss of the transmitter = brake ON. It is done by the receiver failsafe (ch2 set to the brake end), because the receiver keeps sending pulses with the transmitter off and the master's own stale path never fires. If pulses ever stop altogether, the master's no-signal path also brakes (read from the sketch, not tested).
 - Manual reverse: ch7 rising edge toggles direction (no `delay`, a held switch does not re-toggle). Manual and auto
   both go through the ONE `reverse_guard` (stop, settle 500 ms, flip relay). Direction survives a brake press.
 - `MODE` is sent to the Pi at 10 Hz. `danger` and `warning` are hard-coded 0 until the sensor board is wired in:
   MUST be fixed before any real driving.
 - Source choice: auto only if the switch says auto AND the Pi `CMD` is fresh (500 ms); otherwise manual.
-- Not done in the sketch: steering servo output, lift, sensor-board heartbeat and danger, `DEBUG_PRINT` shares the
-  Pi link (set to 0 before wiring the Pi to UART0), which BTS7960 pin extends the brake (`BRAKE_EXTEND_PIN` is a
-  guess), pin 22's transmitter channel number, receiver voltage (pin 22 is 3.3 V only).
+- Done since (compile-only, link checked on hardware): steering servo output (RC or Pi angle), manual lift with the throttle interlock, sensor heartbeat and danger. Still open in the sketch: `DEBUG_PRINT` and the pulse line share the Pi link (set `DEBUG_PRINT` to 0 before wiring the Pi to UART0), which BTS7960 pin extends the brake (`BRAKE_EXTEND_PIN` is a guess), `STEER_AUTO_SIGN` (unknown direction for the auto path), and receiver voltage (pin 22 is 3.3 V only; pulses read fine on the bench but the receiver's output level was not measured).
 - Branch `serial-protocol` is still unmerged and untagged.
 
 ### Session log 2026-11-08 evening (firmware rebuild, pure logic + Pi node)
@@ -911,6 +905,7 @@ DONE and tested on the PC (`cd ~/rover_ws/protocol/cpp && g++ -Wall -o test_prot
 - `ROSSensorBoard.ino` + `ROSMasterBoard.ino` (each with a `globals.h`): micro-ROS version. Does not work at all now; earlier it had inoperable lag, cause never found.
 - Pre-ROS module files REVIEWED 2026-11-08 (see "Pre-ROS firmware review"): `gyro`, `warning_switch`, `bluetooth`, `battery_monitor`, `lift_lower_limit`, `lift_upper_limit` (sensor side; no `gps` file was among the uploads and GPS is never started) and `throttle_and_brakes`, `reverse`, `lift`, `turning` (master side).
 - ROS versions reviewed too: see "Old micro-ROS firmware review" (module files `*_1`, plus `gps_sensor`).
+- New serial-protocol firmware (2026-11-12): `firmware/master_serial/` and `firmware/sensor_serial/`, each holding COPIES of the `protocol/cpp/` files it needs (the Arduino IDE only compiles files inside the sketch folder). Re-copy after any change in `protocol/cpp/`.
 
 ### Findings from reading the sketches (GUESSES about the lag, nothing tested)
 
@@ -924,7 +919,8 @@ DONE and tested on the PC (`cd ~/rover_ws/protocol/cpp && g++ -Wall -o test_prot
 
 ### Open questions (firmware)
 
-- Which transmitter channel is the manual/auto override. It lands on master pin 22 (`turnswitch`, > 1400 us = autonomous steering, per pre-ROS `turning.cpp`); the channel number is still unknown (not 1, 2, 6 or 7). SOLVED - ch 5
+- SOLVED 2026-11-12: the pin 22 manual/auto switch is transmitter channel 5 (three-way switch, 982 / 1514 / 2048 us). Reverse is ch7 on pin 34.
+- Still open after the first bench session: where the GPS wires land on the sensor ESP; `BRAKE_EXTEND_PIN` (which BTS7960 pin extends the brake); `STEER_AUTO_SIGN`; whether the DAC reaches full throttle (3.3 V vs a controller that may want about 4 V); the throttle controller and brake driver models; whether the brake and lift have separate supplies; whether there is an emergency cut-off; the MPU connection looked marginal (it dropped out until power and ground were reseated); the transmitter-loss brake takes up to about 1 s to apply (acceptable?); safety link baud 115200 and timeout 350 ms are PLACEHOLDERS; `esp_bridge` does not publish `MODE` yet.
 - Where the GPS wires physically land on the sensor ESP (unknown; no hardware access 2026-11-08). PLACEHOLDER for the rebuild: GPS RX = GPIO 32, TX = GPIO 33 on the sensor board (free there, not strapping pins, no clash with the 16/17 master link). When the rover is available, check the real wiring, then either move the wire or change the two pin defines to match. Both old firmwares put the GPS on 16/17, which clashes with the safety link.
 - How many UARTs the Pi exposes (overlay names in `config.txt` NOT checked).
 - Real pins: the pre-ROS pins are now known (see "Pre-ROS firmware review"); the ROS boards' pins are still unchecked.
@@ -1087,9 +1083,9 @@ The relay forgets its state on a reset (comes up forward).
 - Sensor serial monitor: is `Slow Loop Detected` printing constantly? (item 8)
 - Bluetooth `g` with the rover level, nose up, nose down: does level read ~0 and are both directions symmetric?
 - Force danger (tilt past 25 deg or fake the flag) and watch the throttle pin with a multimeter or scope. (item 1)
-- Turn the transmitter off: does the brake release? (item 2)
-- Multimeter on the throttle wire at full stick, with and without the 0.75. (torque 1 and 2)
-- Print raw pulse widths for every channel at min, neutral and max. (items 10, 11)
+- Turn the transmitter off: does the brake release? (item 2) ANSWERED 2026-11-12 on the new firmware: the receiver failsafe makes ch2 read the brake end and the master brakes in under 1 s; the old firmware was not tested.
+- Print raw pulse widths for every channel at min, neutral and max. (items 10, 11) DONE 2026-11-12, see "Bench session 2026-11-12".
+- Level tilt reading: calibrated on the new sensor sketch 2026-11-12; the nose up/down symmetry check is not recorded.
 
 ## Old micro-ROS firmware review (2026-11-08)
 
@@ -1216,7 +1212,8 @@ flags freeze. `battery()` builds a `String` every loop (kHz), so heap churn on a
 - Add: publish mode (manual/auto), danger, brake state and limit-switch LEVELS (`/lift_down`); timestamps, frame_ids
   and real covariances on the Pi; steering-angle kinematics on the Pi; a reverse state machine; speed-to-DAC
   calibration; a debug channel that works when the Pi link is down; GPS on pins that do not clash with the link.
-- Decide: should manual driving really require the sensor heartbeat? (It does here. If the sensor board dies you
+- Decided 2026-11-12: manual driving does NOT require the sensor heartbeat. Danger affects autonomous driving only; a silent sensor board shows only as `stale=1` in the master's debug line (a dead MPU still makes the sensor board send danger).
+- Open: where the GPS wires physically land on the sensor ESP. (The pin 22 channel and the receiver failsafe are settled, see "Bench session 2026-11-12".)
   cannot drive, which is safe but also means no recovery by hand.)
 - Open: where the GPS wires physically land on the sensor ESP; which transmitter channel is the pin 22 switch; the
   receiver's failsafe settings.
@@ -1229,14 +1226,11 @@ flags freeze. `battery()` builds a `String` every loop (kHz), so heap churn on a
 2. Nav2 leftovers (the ultrasonic range layer is done): real max steer angle for
    `minimum_turning_radius`, behavior when `/scan_filtered` goes silent, and Pi CPU check (MPPI, Smac's ~29 s
    configure).
-3. Firmware and hardware link. DONE on the PC (all UNTESTED ON HARDWARE): serial protocol (Python + C++),
-   C++ builders and `CMD` parser, pure-logic modules (`watchdog`, `drive`, `reverse_guard`, `mode_switch`),
-   `kinematics.py`, the `esp_bridge` ROS node (both directions), and a first master sketch
-   (`firmware/master_serial`, no motors). Remaining, in order:
-   a. RC reads, mode switch, throttle, brake, manual reverse, and MODE are done, and steering, lift, and sensor danger remain
-   b. Sensor sketch: `LIFT` (limit-switch levels), `BAT`, tilt, same `FILL IN` block.
-   c. Pi side: publish `MODE`, add `IMU`/`GPS`/`DANGER` to the spec, a hardware launch file (without the
-   sim-only nodes), then the bench checklist in "Pre-ROS firmware review".
+3. Firmware and hardware link. DONE on the PC (UNTESTED ON HARDWARE unless noted): serial protocol (Python + C++), builders and parsers, pure-logic modules (`watchdog`, `drive`, `reverse_guard`, `mode_switch`, `brake`, `tilt`, `safety_link`), `kinematics.py`, `parse_mode`, the `esp_bridge` node (both directions, no `MODE` yet), and both sketches (`firmware/master_serial`, `firmware/sensor_serial`, compile-only except as noted). Checked on the real rover 2026-11-12: RC pulses, receiver failsafe, mode and reverse channels, the safety link (`stale=0`), MPU6050 reading and calibration. Remaining, in order:
+   a. Output tests with `ENABLE_OUTPUTS` set to 1, in stages (see "Output tests (PLAN)").
+   b. Pi side: publish `MODE` from `esp_bridge` (`/rover/autonomous`, `/rover/danger`, `/rover/warning`, `/rover/brake`, `/rover/esp_link_ok`), add `IMU`/`GPS` to the spec and the sensor sketch, write a hardware launch file (without the sim-only nodes).
+   c. Wire the Pi to the ESPs (set `DEBUG_PRINT` to 0 first) and rerun the bench checklist in "Pre-ROS firmware review".
+   d. When happy, merge `serial-protocol` (command in "Serial protocol implementation").
 4. Stuck detector and recovery (needs a second signal besides rf2o speed), the remaining roaming abort
    causes, and a retest of the inflation sliders.
 
