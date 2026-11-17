@@ -1,4 +1,5 @@
 from launch import LaunchDescription
+from launch.conditions import IfCondition
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -7,6 +8,8 @@ from launch_ros.actions import Node
 def generate_launch_description():
     use_sim_time_arg = DeclareLaunchArgument("use_sim_time", default_value="true")
     use_sim_time = LaunchConfiguration("use_sim_time")
+    sim_arg = DeclareLaunchArgument("sim", default_value="true")
+    sim = LaunchConfiguration("sim")
 
     rf2o = Node(
         package="rf2o_laser_odometry",
@@ -49,6 +52,9 @@ def generate_launch_description():
         name="sim_lift_signal",
         output="screen",
         parameters=[{"use_sim_time": use_sim_time}],
+        condition=IfCondition(sim),
     )
 
-    return LaunchDescription([use_sim_time_arg, scan_gate, sim_lift, rf2o, odom_cov])
+    return LaunchDescription(
+        [use_sim_time_arg, sim_arg, scan_gate, sim_lift, rf2o, odom_cov]
+    )

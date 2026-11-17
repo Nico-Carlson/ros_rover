@@ -5,6 +5,8 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch.conditions import IfCondition
+from launch.substitutions import PythonExpression
 
 
 def generate_launch_description():
@@ -12,6 +14,8 @@ def generate_launch_description():
     ekf_params = os.path.join(bringup_share, "config", "ekf.yaml")
     use_sim_time_arg = DeclareLaunchArgument("use_sim_time", default_value="true")
     use_sim_time = LaunchConfiguration("use_sim_time")
+    sim_arg = DeclareLaunchArgument("sim", default_value="true")
+    sim = LaunchConfiguration("sim")
 
     ekf_odom = Node(
         package="robot_localization",
@@ -39,7 +43,12 @@ def generate_launch_description():
         parameters=[ekf_params, {"use_sim_time": use_sim_time}],
         remappings=[
             ("odometry/filtered", "odometry/global"),
-            ("gps/fix", "gps/fix_cov"),
+            (
+                "gps/fix",
+                PythonExpression(
+                    ["'gps/fix_cov' if '", sim, "' == 'true' else 'gps/fix'"]
+                ),
+            ),
         ],
     )
 
@@ -49,6 +58,9 @@ def generate_launch_description():
         name="gps_covariance",
         output="screen",
         parameters=[{"use_sim_time": use_sim_time}],
+        condition=IfCondition(sim),
     )
 
-    return LaunchDescription([use_sim_time_arg, ekf_odom, ekf_map, navsat, gps_cov])
+    return LaunchDescription(
+        [use_sim_time_arg, sim_arg, ekf_odom, ekf_map, navsat, gps_cov]
+    )
