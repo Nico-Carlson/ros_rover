@@ -15,7 +15,8 @@ from protocol import parse_mode
 class EspBridge(Node):
     def __init__(self):
         super().__init__("esp_bridge")
-        self.declare_parameter("port", "/dev/ttyUSB0")  # PLACEHOLDER
+        self.declare_parameter("master_port", "/dev/ttyUSB0")  # PLACEHOLDER
+        self.declare_parameter("sensor_port", "/dev/ttyUSB1")  # PLACEHOLDER
         self.declare_parameter("baud", 115200)
         self.declare_parameter("lift_timeout", 1.0)  # PLACEHOLDER, matches scan gate
         self.declare_parameter("wheelbase", 0.686)
@@ -24,9 +25,11 @@ class EspBridge(Node):
         self.declare_parameter("cmd_timeout", 0.5)  # PLACEHOLDER, seconds
         self.declare_parameter("mode_timeout", 0.5)  # PLACEHOLDER, seconds
 
-        port = self.get_parameter("port").value
+        master_port = self.get_parameter("master_port").value
+        sensor_port = self.get_parameter("sensor_port").value
         baud = self.get_parameter("baud").value
-        self.bridge = Bridge(port, baud)
+        self.master = Bridge(master_port, baud)
+        self.sensor = Bridge(sensor_port, baud)
         self.lift = LiftState(self.get_parameter("lift_timeout").value)
 
         self.lift_pub = self.create_publisher(Bool, "/lift_down", 10)
@@ -56,13 +59,16 @@ class EspBridge(Node):
         self.create_timer(
             1.0 / self.get_parameter("cmd_rate_hz").value, self.on_send_timer
         )
-        self.get_logger().info(f"esp_bridge reading {port} at {baud}")
+        self.get_logger().info(
+            f"esp_bridge: master {master_port}, sensor {sensor_port}, {baud} baud"
+        )
 
     def on_poll(self):
-        for kind, fields in self.bridge.poll_with_lift(self.lift):
+        for kind, fields in self.sensor.poll_with_lift(self.lift):
             if kind == "BAT":
                 self.publish_battery(fields)
-            elif kind == "MODE":
+        for kind, fields in self.master.poll():
+            if kind == "MODE":
                 parsed = parse_mode(fields)
                 if parsed is not None:
                     self.mode = parsed
@@ -121,7 +127,7 @@ class EspBridge(Node):
             speed = 0.0
             wz = 0.0
         steer = twist_to_steer_deg(speed, wz, self.wheelbase, self.max_steer_deg)
-        self.bridge.send_cmd(speed, steer, 0.0)
+        self.master.send_cmd(speed, steer, 0.0)
 
 
 def main():

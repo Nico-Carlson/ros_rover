@@ -225,6 +225,7 @@ costmaps (between `obstacle_layer` and `inflation_layer`).
 - Why rf2o spikes (scan timing?)
 - Stuck detector needs a second signal besides rf2o speed (rf2o fails in empty scenes and spikes).
 - Output tests (throttle, brake, steering, lift, reverse relay) are not done; the staged plan is in the DEVLOG. Also unknown: where the GPS wires land, which BTS7960 pin extends the brake, and whether the DAC reaches full throttle.
+- Launch: `control.launch.py` (laptop: RViz and panel) and `hardware.launch.py` (Pi) exist and start on the PC. `esp_bridge` now takes `master_port` and `sensor_port` (untested; test with two socat cables). Still missing on the Pi: LIDAR driver, GPS and IMU publishers, a Nav2 params file without the range layer.
 
 ## Repo layout
 

@@ -722,6 +722,19 @@ unvisited cells N`. States: `No boundary`, `Stopped`, `Patrolling`, `Patrolling 
 - A custom GUI (Python, Qt or a web page) is possible if `rqt_reconfigure` is too limited; decide after
   trying it.
 
+### Launch files and two-port bridge (2026-11-16 to 2026-11-17, branch serial-protocol)
+
+- LAUNCH FILES (tested on the PC with no rover):
+  - `control.launch.py` (laptop): RViz with the saved `rover.rviz` plus the control panel, `use_sim_time` False, no timers. Verified: opens, panel shows "no status" with nothing running.
+  - `hardware.launch.py` (Pi): starts `esp_bridge` (port from the `esp_port` argument, PLACEHOLDER), then on timers 5/10/17/21/25 s (guesses, same order as the sim): `lidar_odom`, `ekf`, `nav2`, `boundary_canvas`, `roam`, all with `use_sim_time` false. Verified on the PC: all of those nodes appear; `esp_bridge` exits on the missing serial device, as expected. `esp_port` still has to become `master_port` and `sensor_port` (see below).
+  - `boundary_canvas` and `roam` run on the PI, not the laptop, because the canvas saves `config/boundary.yaml` and roam reloads it from the same folder.
+  - `lidar_odom.launch.py` and `ekf.launch.py` got a `sim` argument (default true, so `sim_nav` is unchanged). `sim:=false` leaves out `sim_lift_signal`, `gps_covariance`, and the `gps/fix` -> `gps/fix_cov` remap in navsat_transform. Verified with `ros2 node list`.
+- STILL MISSING from the Pi launch (TODO comments in the file): RPLIDAR S2 driver publishing `/scan` (frame `lidar_link`); GPS and IMU publishers (`/gps/fix` with real covariance, `/imu`; the sensor sketch sends tilt only and the GPS wires are not traced); a Nav2 params variant without the ultrasonic range layer (no ultrasonics on the real rover); debug prints must be off (`DEBUG_PRINT` 0) before the Pi is wired to the ESPs.
+- TWO-PORT esp_bridge (edited and compiles, NOT YET TESTED): the old node had one `port`, but the master (MODE out, CMD in) and the sensor board (LIFT and BAT out) are separate UARTs. Now: parameters `master_port` and `sensor_port` (placeholders `/dev/ttyUSB0` and `/dev/ttyUSB1`), two `Bridge` objects, `sensor.poll_with_lift` handles LIFT and BAT, `master.poll` handles MODE, and CMD is sent through the master. `protocol/bridge.py` did not change. The bridge exits at startup if either port is missing.
+- The real ports are the Pi's own UARTs (one dedicated UART per ESP, no USB adapters, decided 2026-11-08): probably `/dev/ttyAMA...` names. Which UARTs a Pi 5 exposes and the `config.txt` overlay names are still unchecked.
+- NEXT: test the two-port bridge on the PC with two `socat -d -d pty,raw,echo=0 pty,raw,echo=0` cables (one per ESP): send `LIFT,1,0*16` on the sensor cable and watch `/lift_down`; send `MODE,1,0,0,0*02` on the master cable and watch `/rover/autonomous`; `cat` the master cable's far end to see the CMD lines. Then change `hardware.launch.py` to pass `master_port` and `sensor_port`.
+- LIFT INTERLOCK: see the entry above. The master's `lift_nd` stuck at 1 is not explained; recheck on the rover after reflashing both boards (the interlock line in `master_serial.ino` is still commented out).
+
 ## Firmware approach (proposed, NOT final)
 
 ### Decided so far (2026-11-08)
@@ -897,6 +910,8 @@ Still UNTESTED ON HARDWARE: every output (throttle DAC, brake actuator and which
 - Source choice: auto only if the switch says auto AND the Pi `CMD` is fresh (500 ms); otherwise manual.
 - Done since (compile-only, link checked on hardware): steering servo output (RC or Pi angle), manual lift with the throttle interlock, sensor heartbeat and danger. Still open in the sketch: `DEBUG_PRINT` and the pulse line share the Pi link (set `DEBUG_PRINT` to 0 before wiring the Pi to UART0), which BTS7960 pin extends the brake (`BRAKE_EXTEND_PIN` is a guess), `STEER_AUTO_SIGN` (unknown direction for the auto path), and receiver voltage (pin 22 is 3.3 V only; pulses read fine on the bench but the receiver's output level was not measured).
 - Branch `serial-protocol` is still unmerged and untagged.
+
+
 
 ### Session log 2026-11-08 evening (firmware rebuild, pure logic + Pi node)
 
