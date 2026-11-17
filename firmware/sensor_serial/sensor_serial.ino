@@ -107,11 +107,12 @@ void loop() {
   bool tilt_danger = tilt.danger || sensor_dead;
   bool tilt_warning = tilt.warning; 
 
-  // Safety packet to the master at 10 Hz.
-  if (now - last_safety_ms >= SAFETY_SEND_MS) {
-    last_safety_ms = now;
-    uint8_t pkt[SAFETY_PACKET_LEN];
-    safety_make_packet(safety_seq++, tilt_danger, tilt_warning, pkt);
-    Serial1.write(pkt, SAFETY_PACKET_LEN);
-  }
+   // Safety packet to the master at 10 Hz.
+   if (now - last_safety_ms >= SAFETY_SEND_MS) {
+     last_safety_ms = now;
+     bool lift_down = (digitalRead(PIN_LIFT_LOWER_LIMIT) == LIMIT_PRESSED_LEVEL);
+     uint8_t pkt[SAFETY_PACKET_LEN];
+     safety_make_packet(safety_seq++, tilt_danger, tilt_warning, pkt, !lift_down);
+     Serial1.write(pkt, SAFETY_PACKET_LEN);
+   }
 }

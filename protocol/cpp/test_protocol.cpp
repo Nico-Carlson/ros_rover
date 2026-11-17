@@ -655,5 +655,70 @@ int main() {
         if (!st) printf("FAIL link: wrap, should be stale\n");
     }
 
+    // --- lift_not_down bit ---
+    {
+        uint8_t p[SAFETY_PACKET_LEN];
+        SafetyReader r;
+        SafetyLink s;
+        bool d, w, l, st, got;
+
+        // make_packet: the bit is set only when asked, the old calls still work
+        safety_make_packet(7, false, false, p, true);
+        if (p[2] != 0x04) { printf("FAIL lift bit: flag alone\n"); failures++; }
+        if (p[3] != safety_crc8(&p[1], 2)) { printf("FAIL lift bit: crc\n"); failures++; }
+        safety_make_packet(7, true, true, p, true);
+        if (p[2] != 0x07) { printf("FAIL lift bit: all three flags\n"); failures++; }
+        safety_make_packet(7, false, false, p);
+        if (p[2] != 0x00) { printf("FAIL lift bit: default is false\n"); failures++; }
+
+        // reader: returns the bit, and clears it
+        safety_reader_init(&r);
+        safety_make_packet(8, false, false, p, true);
+        got = false; l = false;
+        for (int i = 0; i < SAFETY_PACKET_LEN; i++) got = safety_reader_push(&r, p[i], &d, &w, &l);
+        if (!got || !l || d || w) { printf("FAIL lift bit: reader sees it\n"); failures++; }
+        safety_make_packet(9, false, false, p, false);
+        got = false; l = true;
+        for (int i = 0; i < SAFETY_PACKET_LEN; i++) got = safety_reader_push(&r, p[i], &d, &w, &l);
+        if (!got || l) { printf("FAIL lift bit: reader clears it\n"); failures++; }
+
+        // the old 4-argument reader call still works with the bit set
+        safety_make_packet(10, false, false, p, true);
+        got = false;
+        for (int i = 0; i < SAFETY_PACKET_LEN; i++) got = safety_reader_push(&r, p[i], &d, &w);
+        if (!got || d || w) { printf("FAIL lift bit: old reader call\n"); failures++; }
+
+        // link: starts as "not down" (fail-safe)
+        safety_link_init(&s);
+        safety_link_status(&s, 1000, SAFETY_TIMEOUT_MS, &d, &w, &st, &l);
+        if (!l) { printf("FAIL lift bit: link should start true\n"); failures++; }
+
+        // a good packet with the bit clear says "down"
+        safety_make_packet(1, false, false, p, false);
+        for (int i = 0; i < SAFETY_PACKET_LEN; i++) safety_link_push(&s, p[i], 1000);
+        safety_link_status(&s, 1100, SAFETY_TIMEOUT_MS, &d, &w, &st, &l);
+        if (l) { printf("FAIL lift bit: link should clear\n"); failures++; }
+
+        // it holds through silence
+        safety_link_status(&s, 60000, SAFETY_TIMEOUT_MS, &d, &w, &st, &l);
+        if (l) { printf("FAIL lift bit: link should hold when stale\n"); failures++; }
+
+        // a bad-CRC packet with the bit set changes nothing
+        safety_make_packet(2, false, false, p, true);
+        p[3] ^= 0xFF;
+        for (int i = 0; i < SAFETY_PACKET_LEN; i++) safety_link_push(&s, p[i], 61000);
+        safety_link_status(&s, 61010, SAFETY_TIMEOUT_MS, &d, &w, &st, &l);
+        if (l) { printf("FAIL lift bit: bad packet set it\n"); failures++; }
+
+        // a good packet with the bit set raises it again
+        safety_make_packet(3, false, false, p, true);
+        for (int i = 0; i < SAFETY_PACKET_LEN; i++) safety_link_push(&s, p[i], 62000);
+        safety_link_status(&s, 62010, SAFETY_TIMEOUT_MS, &d, &w, &st, &l);
+        if (!l) { printf("FAIL lift bit: good packet should set it\n"); failures++; }
+
+        // the old 6-argument status call still works
+        safety_link_status(&s, 62020, SAFETY_TIMEOUT_MS, &d, &w, &st);
+    }
+
     return failures;
 }

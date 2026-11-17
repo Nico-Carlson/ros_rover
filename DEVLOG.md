@@ -682,6 +682,12 @@ unvisited cells N`. States: `No boundary`, `Stopped`, `Patrolling`, `Patrolling 
 - The stuck detector needs a second signal besides rf2o speed (rf2o fails in empty scenes and spikes).
 - Remaining roaming aborts: `Start occupied` next to trees, planner timeouts; retest the inflation sliders now that
   localization is stable.
+- GPS wires reported on pins 33 and 36 (which one is TX unconfirmed).
+- The lift controller is probably the DIHOOL IPS-S2, and the steering servo is a DOCYKE.
+- The throttle controller and brake driver models are still unknown.
+- Add the power notes: the converter is 5 V / 5 A, the relay contacts are rated 28 VDC, and the battery voltage is unrecorded.
+- Drive motor controller photographed 2026-11-12: "H e" brushed motor controller, 36 V, 500 W, undervoltage 30 V, model number partly unreadable (...YD36/5/22A). Battery is probably 36 V nominal (GUESS from the label, not measured). Throttle input range unknown (typical hall style 1 to 4.2 V, UNVERIFIED).
+- Parts possibly over-voltage on a 36 to 42 V pack: relay contacts (28 VDC), DIHOOL IPS-S2 (30 V max), brake driver if a BTS7960 (about 27 V, from memory). Which supply each one sits on is not recorded.
 
 ## Parts (from Amazon listing titles; specs below are from memory, NOT verified)
 
@@ -809,7 +815,7 @@ serial-protocol && git tag serial-protocol-v1`).
   rate so the ESP command-timeout watchdog stays satisfied.
 - Test habit: run `python3 -m pytest -q` only from inside `protocol/`; running it from `~/rover_ws` pulls in
   the failing `rover_basics` flake8 lint (976 style errors, unrelated, ignorable).
-- ROS node rover_bringup/scripts/esp_bridge.py (tested on the PC with a socat cable and printf, UNTESTED ON HARDWARE): reads the serial link at 50 Hz, publishes /lift_down from LiftState on a 10 Hz timer (false when the ESP is silent) and /battery_voltage (Float32, placeholder name). Subscribes /cmd_vel and sends CMD at 20 Hz; steering comes from protocol/kinematics.py (atan(wheelbase * wz / v), positive = left, clamped to 30 deg PLACEHOLDER, 0 at or below 0.05 m/s); a /cmd_vel older than 0.5 s (PLACEHOLDER) sends speed 0. CMakeLists.txt installs bridge.py, protocol.py and kinematics.py from ../../protocol/ next to the node (an install(FILES ...) block above ament_package()); package.xml has python3-serial. Not yet done: MODE is not published, /imu and /gps/fix wait for IMU/GPS in the spec, esp_bridge is not in sim_nav (sim-only: it must not run in the sim) and not in a hardware launch file. Also still to add to SPEC.md: steer positive = left.
+- ROS node rover_bringup/scripts/esp_bridge.py (tested on the PC with a socat cable and printf, UNTESTED ON HARDWARE): reads the serial link at 50 Hz, publishes /lift_down from LiftState on a 10 Hz timer (false when the ESP is silent) and /battery_voltage (Float32, placeholder name). Subscribes /cmd_vel and sends CMD at 20 Hz; steering comes from protocol/kinematics.py (atan(wheelbase * wz / v), positive = left, clamped to 30 deg PLACEHOLDER, 0 at or below 0.05 m/s); a /cmd_vel older than 0.5 s (PLACEHOLDER) sends speed 0. CMakeLists.txt installs bridge.py, protocol.py and kinematics.py from ../../protocol/ next to the node (an install(FILES ...) block above ament_package()); package.xml has python3-serial.  /imu and /gps/fix wait for IMU/GPS in the spec, esp_bridge is not in sim_nav (sim-only: it must not run in the sim) and not in a hardware launch file. Also still to add to SPEC.md: steer positive = left.
 
 ### Output tests (PLAN, written 2026-11-12; nothing below has been run)
 
@@ -857,9 +863,17 @@ MPU6050 (sensor board):
 - At first `mpu_ok=0` (so danger=1 after 350 ms, by design). It worked after its power and ground were reconnected, so that connection is marginal; check it.
 - At rest it read roll -166.4, pitch -1.2: the board is mounted upside down about the X axis (GUESS from the numbers). Fix: `MPU_SIGN_Y` and `MPU_SIGN_Z` flipped, plus a level offset for roll and pitch, all in the sensor sketch's `FILL IN` block (TODO: copy the four final numbers here). Calibrated against the rover's resting position. Not recorded: whether `danger=0 warn=0` at rest on the master's debug line, and the nose up/down and left/right symmetry check.
 
-Python side: `protocol.parse_mode` plus `protocol/test_mode.py` are done. `esp_bridge` does not publish `MODE` yet. PLAN: `/rover/autonomous`, `/rover/danger`, `/rover/warning`, `/rover/brake` (Bool) and `/rover/esp_link_ok` (false when no `MODE` for 0.5 s, PLACEHOLDER; a silent ESP also forces `autonomous` false).
+Python side: `protocol.parse_mode` plus `protocol/test_mode.py` are done. `esp_bridge` publishes `MODE` (tested on the PC with a socat cable, UNTESTED ON HARDWARE): `/rover/autonomous`, `/rover/danger`, `/rover/warning`, `/rover/brake` (Bool) and `/rover/esp_link_ok` (false when no `MODE` for 0.5 s, PLACEHOLDER; a silent ESP also forces `autonomous` false).
 
 Still UNTESTED ON HARDWARE: every output (throttle DAC, brake actuator and which BTS7960 pin extends it, steering servo, lift, reverse relay), the throttle multimeter test, and the Pi link. `DEBUG_PRINT` and the pulse line share the Pi's UART0: set `DEBUG_PRINT` to 0 before wiring the Pi.
+
+### Output tests 2026-11-12 evening (stages 2 to 7, wheels off the ground, brake actuator disconnected from the lever)
+
+- First flash with ENABLE_OUTPUTS 1: brake and servo twitched, lift crept down, and the pulses line read 0 (no signal). CAUSE: calling steer_servo.writeMicroseconds() every loop (thousands of times a second) knocked out the RC input; with no signal the master requests the brake, so everything twitched. Found by bisecting: brake enables off (no change), servo off (steady), servo attach only (steady), 20 ms rate limit (still broken), write only when the target changes by 8 us or more (works). WHY the repeated writes break it is unknown (guess: PWM reconfiguration or interrupt starvation).
+- Verified: reverse relay clicks and the wheels reverse; manual throttle reaches full speed (answers the 3.3 V DAC question, no multimeter used); transmitter off cuts the drive quickly (not timed); lift up and down work (up needed a loose wire fixed); lift will not move while the throttle is on; brake extends on the stick push, the limit switch stops it, retract works; steering follows the stick.
+- Not done: brake actuator connected to the lever; STEER_AUTO_SIGN; the Pi link; lift speed is slow (the firmware only sets two pins, so speed is the lift's own motor or controller; check the DIHOOL manual and what supplies it).
+- GAP FOUND: the throttle worked with the lift not fully down. The master never knew the lift state (the sensor sent LIFT only to the Pi). Sensor LIFT lines: down = LIFT,1,0, up = LIFT,0,1, between = LIFT,0,0.
+- FIX IN PROGRESS: bit 2 (0x04) of the safety packet flags = "lift not down" (sensor sends it from the lower limit; true = not pressed). SafetyLink.lift_not_down defaults to TRUE until a good packet says otherwise (fail-safe). Master forces throttle 0 and brake on while it is true, manual and auto. The API change uses default arguments, so the old C++ tests still compile and pass. Master and sensor are flashed with it. BUG: the master's debug field lift_nd stays 1 when the limit switch toggles. Suspect: the line in safety_link_push that stores the bit may be missing. Check that first, then add C++ tests for the new bit. Until it is fixed the master will not drive.
 
 ### Master sketch progress (2026-11-08, branch serial-protocol, pushed; compile-only, UNTESTED ON HARDWARE)
 
@@ -924,6 +938,8 @@ DONE and tested on the PC (`cd ~/rover_ws/protocol/cpp && g++ -Wall -o test_prot
 - Where the GPS wires physically land on the sensor ESP (unknown; no hardware access 2026-11-08). PLACEHOLDER for the rebuild: GPS RX = GPIO 32, TX = GPIO 33 on the sensor board (free there, not strapping pins, no clash with the 16/17 master link). When the rover is available, check the real wiring, then either move the wire or change the two pin defines to match. Both old firmwares put the GPS on 16/17, which clashes with the safety link.
 - How many UARTs the Pi exposes (overlay names in `config.txt` NOT checked).
 - Real pins: the pre-ROS pins are now known (see "Pre-ROS firmware review"); the ROS boards' pins are still unchecked.
+- Drive motor controller photographed 2026-11-12 ("H e" brushed motor controller, 36 V, 500 W, undervoltage 30 V). Battery voltage and the throttle input range are not measured.
+- Resolved: the DAC reaches full speed on the drive controller. BRAKE_EXTEND_PIN (LPWM 18) extends, as guessed.
 
 ### Original Proposal
 
@@ -1072,6 +1088,7 @@ The relay forgets its state on a reset (comes up forward).
    comment suggests that style). So even 100% may be partial throttle. Test: multimeter on the throttle wire at full
    stick, compared with the voltage the controller's own throttle gives. Fix: buffer and amplify the DAC with a
    rail-to-rail op-amp on 5 V (gain ~1.5), or use an external DAC that runs on 5 V.
+   Update 2026-11-12: the controller is a 36 V brushed controller (see Open questions). At a typical 1.0 to 4.2 V throttle range, 3.3 V is about 72% and the old 0.75 cap about 47% (arithmetic on an assumed range). Stage 7 still has to measure the real range.
 3. Range cliff (item 10): holding full pull past 980 us drops the throttle to 0.
 4. Hardware, not visible from code: controller current limit and low-speed or eco settings, battery sag under load
    (the sensor board's `b` command shows voltage; watch it while accelerating), gearing, and the large wheel
@@ -1228,7 +1245,7 @@ flags freeze. `battery()` builds a `String` every loop (kHz), so heap churn on a
    configure).
 3. Firmware and hardware link. DONE on the PC (UNTESTED ON HARDWARE unless noted): serial protocol (Python + C++), builders and parsers, pure-logic modules (`watchdog`, `drive`, `reverse_guard`, `mode_switch`, `brake`, `tilt`, `safety_link`), `kinematics.py`, `parse_mode`, the `esp_bridge` node (both directions, no `MODE` yet), and both sketches (`firmware/master_serial`, `firmware/sensor_serial`, compile-only except as noted). Checked on the real rover 2026-11-12: RC pulses, receiver failsafe, mode and reverse channels, the safety link (`stale=0`), MPU6050 reading and calibration. Remaining, in order:
    a. Output tests with `ENABLE_OUTPUTS` set to 1, in stages (see "Output tests (PLAN)").
-   b. Pi side: publish `MODE` from `esp_bridge` (`/rover/autonomous`, `/rover/danger`, `/rover/warning`, `/rover/brake`, `/rover/esp_link_ok`), add `IMU`/`GPS` to the spec and the sensor sketch, write a hardware launch file (without the sim-only nodes).
+   b. Pi side: (`/rover/autonomous`, `/rover/danger`, `/rover/warning`, `/rover/brake`, `/rover/esp_link_ok`), add `IMU`/`GPS` to the spec and the sensor sketch, write a hardware launch file (without the sim-only nodes).
    c. Wire the Pi to the ESPs (set `DEBUG_PRINT` to 0 first) and rerun the bench checklist in "Pre-ROS firmware review".
    d. When happy, merge `serial-protocol` (command in "Serial protocol implementation").
 4. Stuck detector and recovery (needs a second signal besides rf2o speed), the remaining roaming abort

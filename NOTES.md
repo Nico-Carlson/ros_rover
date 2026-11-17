@@ -7,8 +7,7 @@ instructions (and what to paste into a new chat), see `DEVLOG.md`. For the publi
 
 Autonomous Ackermann rover for forest navigation (data collection for another school's camera project).
 Modes: (1) navigate to a GPS pin avoiding obstacles, (2) roam inside a boundary, (3) get unstuck.
-Mapping is secondary. The navigation stack is tested in the Gazebo sim only. The ESP32 firmware and the Pi serial bridge exist and are partly tested on the real rover (see "Firmware and bench notes"); nothing has driven yet.
-
+Mapping is secondary. The navigation stack is tested in the Gazebo sim only. The ESP32 firmware and the Pi serial bridge exist and are partly tested on the real rover (see "Firmware and bench notes"); currently working but configuring issues with lift's limit swtiches.
 ## Stack
 
 - ROS 2 Jazzy + Gazebo Harmonic, Ubuntu 24.04 in a distrobox on Arch (Hyprland)
@@ -31,7 +30,7 @@ Done in the sim:
 - Ultrasonic range layer in both Nav2 costmaps (sim converter `us_to_range`); LIDAR is blind below ~0.57 m
 - rf2o speed gate and 22 extra sim trees (localization no longer blows up); `/patrol_status` topic; canvas slab
   shows only while drawing
-- Firmware and hardware (2026-11-12): plain UART serial between the Pi and two ESP32s (text lines with a checksum; `protocol/SPEC.md` is the source of truth) instead of micro-ROS, which lagged badly in the old build (cause never found). Both sketches (`firmware/master_serial`, `firmware/sensor_serial`) are written and the pure logic is tested on the PC. On the real rover so far: RC pulses measured, the receiver failsafe set (loss of the transmitter brakes), the sensor-to-master safety link works, and the tilt sensor is calibrated. NOT done: every motor, actuator and relay output (`ENABLE_OUTPUTS` is 0), the Pi link, GPS, and publishing `MODE` from `esp_bridge`. Details: DEVLOG "Bench session 2026-11-12" and "Output tests (PLAN)".
+- Firmware and hardware (2026-11-12): plain UART serial between the Pi and two ESP32s (text lines with a checksum; `protocol/SPEC.md` is the source of truth) instead of micro-ROS, which lagged badly in the old build (cause never found). Both sketches (`firmware/master_serial`, `firmware/sensor_serial`) are written and the pure logic is tested on the PC. On the real rover so far: RC pulses measured, the receiver failsafe set (loss of the transmitter brakes), the sensor-to-master safety link works, and the tilt sensor is calibrated. NOT done: every motor, actuator and relay output (`ENABLE_OUTPUTS` is 0), the Pi link, GPS, Details: DEVLOG "Bench session 2026-11-12" and "Output tests (PLAN)".
 - exec_depend entries added to rover_bringup and rover_description (rosdep check clean). On the Pi: rosdep install --from-paths src --ignore-src -r -y --skip-keys "cmake_modules ros_gz_sim ros_gz_bridge joint_state_publisher_gui"
 
 Open:
@@ -41,7 +40,7 @@ Open:
 - Behavior when `/scan_filtered` goes silent (Nav2 would look like "no obstacles")
 - Real heading source for GPS fusion on hardware (the sim IMU is a perfect compass)
 - Realistic sim IMU noise; tune covariances against real data
-- Output tests on the real rover (staged plan in the DEVLOG), the Pi link, GPS wiring, `MODE` topics from `esp_bridge`, a hardware launch file, field testing
+- Output tests on the real rover (staged plan in the DEVLOG), the Pi link, GPS wiring, a hardware launch file, field testing
 
 ## Run it (sim)
 

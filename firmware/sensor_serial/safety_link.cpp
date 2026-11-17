@@ -14,10 +14,11 @@ uint8_t safety_crc8(const uint8_t *data, size_t len) {
 }
 
 void safety_make_packet(uint8_t seq, bool danger, bool warning,
-                        uint8_t out[SAFETY_PACKET_LEN]) {
+                        uint8_t out[SAFETY_PACKET_LEN], bool lift_not_down) {
     uint8_t flags = 0;
     if (danger)  flags |= SAFETY_FLAG_DANGER;
     if (warning) flags |= SAFETY_FLAG_WARNING;
+    if (lift_not_down) flags |= SAFETY_FLAG_LIFT_NOT_DOWN;
 
     out[0] = SAFETY_MAGIC;
     out[1] = seq;
@@ -29,7 +30,7 @@ void safety_reader_init(SafetyReader* r) {
     r->count = 0;
 }
 
-bool safety_reader_push(SafetyReader* r, uint8_t byte, bool* danger, bool* warning) {
+bool safety_reader_push(SafetyReader* r, uint8_t byte, bool* danger, bool* warning, bool* lift_not_down) {
     // Not inside a packet yet: ignore everything until the magic byte.
     if (r->count == 0 && byte != SAFETY_MAGIC) return false;
 
@@ -40,6 +41,7 @@ bool safety_reader_push(SafetyReader* r, uint8_t byte, bool* danger, bool* warni
     if (safety_crc8(&r->buf[1], 2) == r->buf[3]) {
         *danger  = (r->buf[2] & SAFETY_FLAG_DANGER)  != 0;
         *warning = (r->buf[2] & SAFETY_FLAG_WARNING) != 0;
+        if (lift_not_down) *lift_not_down = (r->buf[2] & SAFETY_FLAG_LIFT_NOT_DOWN) != 0;
         r->count = 0;
         return true;
     }
@@ -61,20 +63,23 @@ void safety_link_init(SafetyLink* s) {
     watchdog_init(&s->wd);
     s->danger  = false;
     s->warning = false;
+    s->lift_not_down = true;
 }
 
 void safety_link_push(SafetyLink* s, uint8_t byte, uint32_t now_ms) {
-    bool d, w;
-    if (safety_reader_push(&s->reader, byte, &d, &w)) {
-        s->danger  = d;
-        s->warning = w;
-        watchdog_feed(&s->wd, now_ms);
-    }
+   bool d, w, l;
+   if (safety_reader_push(&s->reader, byte, &d, &w, &l)) {
+     s->danger  = d;
+     s->warning = w;
+     s->lift_not_down = l;
+     watchdog_feed(&s->wd, now_ms);
+   }
 }
 
 void safety_link_status(const SafetyLink* s, uint32_t now_ms, uint32_t timeout_ms,
-                        bool* danger, bool* warning, bool* stale) {
+                        bool* danger, bool* warning, bool* stale, bool* lift_not_down) {
     *danger  = s->danger;
     *warning = s->warning;
     *stale   = !watchdog_fresh(&s->wd, now_ms, timeout_ms);
+    if (lift_not_down) *lift_not_down = s->lift_not_down;
 }

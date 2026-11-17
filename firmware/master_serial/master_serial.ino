@@ -16,7 +16,7 @@
 
 // ===================== FILL IN =====================
 // Every uncertain value lives here. Check against the real wiring.
-#define ENABLE_OUTPUTS 0        // 0 = never touch the motor pins (first test)
+#define ENABLE_OUTPUTS 1        // 0 = never touch the motor pins (first test)
 
 // RC inputs (pins from the pre-ROS firmware)
 #define PIN_RC_STEER     35     // ch1
@@ -81,6 +81,7 @@ bool manual_brake_wanted(bool have_signal, int pulse_us) {
 float cmd_speed = 0, cmd_steer = 0, cmd_lift = 0;   // last good command
 uint32_t last_print_ms = 0;
 uint32_t last_mode_ms = 0;
+int last_servo_us = 0;     // global
 
 bool manual_reverse = false;     // direction chosen with the ch7 switch
 bool rev_prev_pressed = false;
@@ -232,8 +233,8 @@ void loop() {
   while (Serial1.available() > 0) {
     safety_link_push(&safety, (uint8_t)Serial1.read(), now);
   }
-  bool danger, warning, link_stale;
-  safety_link_status(&safety, now, SAFETY_TIMEOUT_MS, &danger, &warning, &link_stale);
+  bool danger, warning, link_stale, lift_not_down;
+  safety_link_status(&safety, now, SAFETY_TIMEOUT_MS, &danger, &warning, &link_stale, &lift_not_down);
 
   // 1b. Mode switch
   int mode_w = 0;
@@ -278,6 +279,7 @@ void loop() {
   }
   if (manual_brake) { want.throttle_dac = 0; want.brake = true; }   // brake always wins
     if (danger && use_auto) { want.throttle_dac = 0; want.brake = true; }   // danger stops AUTONOMOUS driving only
+    // if (lift_not_down) { want.throttle_dac = 0; want.brake = true; }   // lift not fully down: no driving, manual or auto
   reverse_guard_step(&guard, &want, now, REVERSE_SETTLE_MS, &safe);
 
   // 3. Tell the Pi our state at a steady 10 Hz.
@@ -309,7 +311,10 @@ void loop() {
   BrakeMotor bm = brake_step(&brake, final_brake, limit_pressed, now);
   digitalWrite(BRAKE_EXTEND_PIN,  bm == BRAKE_MOTOR_EXTEND  ? HIGH : LOW);
   digitalWrite(BRAKE_RETRACT_PIN, bm == BRAKE_MOTOR_RETRACT ? HIGH : LOW);
-  steer_servo.writeMicroseconds(steer_us);
+  if (abs(steer_us - last_servo_us) >= 8) {   // ignore tiny RC jitter
+    last_servo_us = steer_us;
+    steer_servo.writeMicroseconds(steer_us);
+  }
 
   digitalWrite(PIN_LIFT_A, lift_cmd == LIFT_UP   ? HIGH : (lift_cmd == LIFT_DOWN ? LOW  : HIGH));
   digitalWrite(PIN_LIFT_B, lift_cmd == LIFT_DOWN ? HIGH : (lift_cmd == LIFT_UP   ? LOW  : HIGH));
@@ -318,10 +323,10 @@ void loop() {
 #if DEBUG_PRINT
   if (now - last_print_ms >= 200) {
     last_print_ms = now;
-    Serial.printf("# fresh=%d speed=%.2f dac=%u rev=%d brake=%d settling=%d auto=%d manual_dac=%d mbrake=%d steer=%d lift=%d danger=%d warn=%d stale=%d\n",
+    Serial.printf("# fresh=%d speed=%.2f dac=%u rev=%d brake=%d settling=%d auto=%d manual_dac=%d mbrake=%d steer=%d lift=%d danger=%d warn=%d stale=%d lift_nd=%d\n",
                   fresh, speed, safe.throttle_dac, safe.reverse, safe.brake,
                   guard.settling, mode.autonomous, manual_dac, manual_brake, steer_us, (int)lift_cmd,
-                  danger, warning, link_stale);
+                  danger, warning, link_stale, lift_not_down);
     Serial.printf("# pulses us: steer=%d thr=%d lift=%d rev=%d mode=%d (0 = no signal)\n",
               steer_w, thr_w, lift_w, rev_w, mode_w);
   }
