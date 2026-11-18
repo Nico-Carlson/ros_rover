@@ -17,21 +17,33 @@ def include(package, launch_file, args=None):
 
 
 def generate_launch_description():
-    esp_port_arg = DeclareLaunchArgument(
-        "esp_port", default_value="/dev/ttyUSB0"
-    )  # PLACEHOLDER
-    esp_port = LaunchConfiguration("esp_port")
+    # PLACEHOLDERS: ttyUSB numbers can swap between boots. Replace with stable
+    # /dev/serial/by-id/... paths once the Pi is connected to both ESPs.
+    master_port_arg = DeclareLaunchArgument(
+        "master_port", default_value="/dev/ttyUSB0"
+    )  # PLACEHOLDER (MODE out, CMD in)
+    sensor_port_arg = DeclareLaunchArgument(
+        "sensor_port", default_value="/dev/ttyUSB1"
+    )  # PLACEHOLDER (LIFT and BAT out)
+    master_port = LaunchConfiguration("master_port")
+    sensor_port = LaunchConfiguration("sensor_port")
 
     # TODO: the RPLIDAR S2 driver goes here, publishing /scan with frame lidar_link.
     # TODO: GPS and IMU publishers (/gps/fix with real covariance, /imu) are not wired to the Pi yet.
-    # GAP: esp_bridge has ONE port; the master and sensor ESPs are on two UARTs.
+    # esp_bridge has two ports (master and sensor ESP); it exits at startup if either is missing.
 
     esp_bridge = Node(
         package="rover_bringup",
         executable="esp_bridge.py",
         name="esp_bridge",
         output="screen",
-        parameters=[{"port": esp_port, "use_sim_time": False}],
+        parameters=[
+            {
+                "master_port": master_port,
+                "sensor_port": sensor_port,
+                "use_sim_time": False,
+            }
+        ],
     )
 
     lidar_odom = include(
@@ -61,7 +73,8 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            esp_port_arg,
+            master_port_arg,
+            sensor_port_arg,
             esp_bridge,
             TimerAction(period=5.0, actions=[lidar_odom]),
             TimerAction(period=10.0, actions=[ekf]),

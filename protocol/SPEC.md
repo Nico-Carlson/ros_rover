@@ -29,3 +29,20 @@ LIFT,down,up
 BAT,volts
 - volts: battery voltage, float, one decimal
 - Sent at PLACEHOLDER 1 Hz.
+
+IMU,ax,ay,az,gx,gy,gz
+- ax, ay, az: acceleration in m/s^2, float, two decimals (body frame, x forward, y left, z up)
+- gx, gy, gz: angular rate in rad/s, float, three decimals (same axes)
+- The ESP applies the sensor scaling, axis mapping and gyro bias; the Pi sees SI units only.
+- Sent from the sensor ESP at PLACEHOLDER 50 Hz. No timestamp: the Pi stamps it on receipt.
+- The MPU6050 has no compass, so there is no orientation.
+
+GPS,fix,sats,lat,lon,alt,hdop
+- fix: 1 = valid fix, 0 = none
+- sats: satellites used, integer
+- lat, lon: decimal degrees, float, 7 decimals (negative = S / W)
+- alt: metres above mean sea level, float, one decimal
+- hdop: horizontal dilution of precision, float, two decimals
+- The ESP parses the module's NMEA; the Pi never sees raw NMEA. Sent once per new fix
+  (PLACEHOLDER 1 to 5 Hz, whatever the module outputs). Longest case is about 55 characters.
+- Pi rule: fix = 0 means publish nothing on /gps/fix. Covariance is computed on the Pi from hdop.

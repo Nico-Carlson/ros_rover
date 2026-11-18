@@ -1,3 +1,6 @@
+import math
+
+
 def checksum(body):
     value = 0
     for char in body:
@@ -68,3 +71,41 @@ def parse_mode(fields):
         else:
             return None
     return tuple(flags)
+
+
+def parse_floats(fields, count):
+    if len(fields) != count:
+        return None
+    values = []
+    for f in fields:
+        try:
+            v = float(f)
+        except ValueError:
+            return None
+        if not math.isfinite(v):
+            return None
+        values.append(v)
+    return values
+
+
+def parse_imu(fields):
+    """Returns (ax, ay, az, gx, gy, gz) or None if malformed."""
+    values = parse_floats(fields, 6)
+    return None if values is None else tuple(values)
+
+
+def parse_gps(fields):
+    """Returns (fix, sats, lat, lon, alt, hdop) or None if malformed."""
+    if len(fields) != 6 or fields[0] not in ("0", "1"):
+        return None
+    try:
+        sats = int(fields[1])
+    except ValueError:
+        return None
+    values = parse_floats(fields[2:], 4)
+    if values is None:
+        return None
+    lat, lon, alt, hdop = values
+    if sats < 0 or hdop < 0 or not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+        return None
+    return (fields[0] == "1", sats, lat, lon, alt, hdop)

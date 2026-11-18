@@ -10,6 +10,8 @@ from std_msgs.msg import Bool, Float32
 from bridge import Bridge, LiftState
 from kinematics import twist_to_steer_deg
 from protocol import parse_mode
+from sensor_msgs.msg import Imu, NavSatFix, NavSatStatus
+from protocol import parse_mode, parse_imu, parse_gps
 
 
 class EspBridge(Node):
@@ -24,6 +26,9 @@ class EspBridge(Node):
         self.declare_parameter("cmd_rate_hz", 20.0)
         self.declare_parameter("cmd_timeout", 0.5)  # PLACEHOLDER, seconds
         self.declare_parameter("mode_timeout", 0.5)  # PLACEHOLDER, seconds
+        self.declare_parameter("gyro_variance", 0.0004)  # PLACEHOLDER, (rad/s)^2
+        self.declare_parameter("accel_variance", 0.04)  # PLACEHOLDER, (m/s^2)^2
+        self.declare_parameter("gps_uere", 1.5)  # PLACEHOLDER, metres per HDOP unit
 
         master_port = self.get_parameter("master_port").value
         sensor_port = self.get_parameter("sensor_port").value
@@ -44,6 +49,9 @@ class EspBridge(Node):
         self.warning_pub = self.create_publisher(Bool, "/rover/warning", 10)
         self.brake_pub = self.create_publisher(Bool, "/rover/brake", 10)
         self.link_pub = self.create_publisher(Bool, "/rover/esp_link_ok", 10)
+
+        self.imu_pub = self.create_publisher(Imu, "/imu", 10)
+        self.gps_pub = self.create_publisher(NavSatFix, "/gps/fix", 10)
 
         self.create_timer(0.02, self.on_poll)  # read the serial port at 50 Hz
         self.create_timer(0.1, self.on_lift_timer)  # publish /lift_down at 10 Hz
@@ -67,6 +75,13 @@ class EspBridge(Node):
         for kind, fields in self.sensor.poll_with_lift(self.lift):
             if kind == "BAT":
                 self.publish_battery(fields)
+            if kind == "BAT":
+                self.publish_battery(fields)
+            elif kind == "IMU":
+                self.publish_imu(fields)
+            elif kind == "GPS":
+                self.publish_gps(fields)
+
         for kind, fields in self.master.poll():
             if kind == "MODE":
                 parsed = parse_mode(fields)
@@ -128,6 +143,57 @@ class EspBridge(Node):
             wz = 0.0
         steer = twist_to_steer_deg(speed, wz, self.wheelbase, self.max_steer_deg)
         self.master.send_cmd(speed, steer, 0.0)
+
+    def publish_imu(self, fields):
+        parsed = parse_imu(fields)
+        if parsed is None:
+            return
+        ax, ay, az, gx, gy, gz = parsed
+        msg = Imu()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = "imu_link"
+        msg.orientation_covariance[0] = -1.0  # no orientation from this sensor
+        msg.linear_acceleration.x = ax
+        msg.linear_acceleration.y = ay
+        msg.linear_acceleration.z = az
+        msg.angular_velocity.x = gx
+        msg.angular_velocity.y = gy
+        msg.angular_velocity.z = gz
+        g = self.get_parameter("gyro_variance").value
+        a = self.get_parameter("accel_variance").value
+        msg.angular_velocity_covariance = [g, 0.0, 0.0, 0.0, g, 0.0, 0.0, 0.0, g]
+        msg.linear_acceleration_covariance = [a, 0.0, 0.0, 0.0, a, 0.0, 0.0, 0.0, a]
+        self.imu_pub.publish(msg)
+
+    def publish_gps(self, fields):
+        parsed = parse_gps(fields)
+        if parsed is None:
+            return
+        fix, sats, lat, lon, alt, hdop = parsed
+        if not fix:
+            return  # no fix: publish nothing
+        msg = NavSatFix()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = "gps_link"
+        msg.status.status = NavSatStatus.STATUS_FIX
+        msg.status.service = NavSatStatus.SERVICE_GPS
+        msg.latitude = lat
+        msg.longitude = lon
+        msg.altitude = alt
+        h = max(hdop, 0.5) * self.get_parameter("gps_uere").value
+        msg.position_covariance = [
+            h * h,
+            0.0,
+            0.0,
+            0.0,
+            h * h,
+            0.0,
+            0.0,
+            0.0,
+            4.0 * h * h,
+        ]
+        msg.position_covariance_type = NavSatFix.COVARIANCE_TYPE_APPROXIMATED
+        self.gps_pub.publish(msg)
 
 
 def main():
