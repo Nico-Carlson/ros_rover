@@ -454,6 +454,10 @@ Not done: brake actuator connected to the lever, `STEER_AUTO_SIGN` and the steer
   (fail-safe), and the master forces throttle 0 and brake on while it is true, in manual and auto. The API change uses default arguments, so the old C++ tests still compile.
 - BUG: the master's debug field `lift_nd` stays 1 when the limit switch toggles (not explained). Suspect: the line in `safety_link_push` that stores the bit may be missing: check that first, then add C++ tests for the new bit. The interlock line in
   `master_serial.ino` was still commented out at the last note. Until fixed, the master will not drive. Recheck on the rover after reflashing both boards.
+- 2026-11-17 (PC only): library, call sites and sketch copies checked; C++ tests for the bit exist and
+  pass (tested). Remaining suspects: LIMIT_PRESSED_LEVEL on pin 13 (UNVERIFIED), or stale flash on
+  one board. On the rover: reflash both, print digitalRead(13) while pressing the lower limit,
+  watch the LIFT line on the Pi side.
 
 ### 8.7 Pin map
 
