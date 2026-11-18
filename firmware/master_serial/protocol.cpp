@@ -100,6 +100,26 @@ size_t protocol_make_mode(bool autonomous, bool danger, bool warning, bool brake
     return protocol_make_line(body, out, out_size);
 }
 
+size_t protocol_make_imu(float ax, float ay, float az,
+                         float gx, float gy, float gz,
+                         char* out, size_t out_size) {
+    char body[64];
+    int n = snprintf(body, sizeof(body), "IMU,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f",
+                     ax, ay, az, gx, gy, gz);
+    if (n < 0 || (size_t)n >= sizeof(body)) return 0;   // body was cut off: refuse
+    return protocol_make_line(body, out, out_size);
+}
+
+size_t protocol_make_gps(bool fix, int sats, double lat, double lon,
+                         float alt, float hdop,
+                         char* out, size_t out_size) {
+    char body[64];
+    int n = snprintf(body, sizeof(body), "GPS,%d,%d,%.7f,%.7f,%.1f,%.2f",
+                     fix ? 1 : 0, sats, lat, lon, alt, hdop);
+    if (n < 0 || (size_t)n >= sizeof(body)) return 0;   // body was cut off: refuse
+    return protocol_make_line(body, out, out_size);
+}
+
 bool protocol_parse_cmd(const char* body, float* speed, float* steer, float* lift) {
     if (strncmp(body, "CMD,", 4) != 0) return false;
     const char* p = body + 4;

@@ -26,6 +26,18 @@ size_t protocol_make_bat(float volts, char* out, size_t out_size);
 size_t protocol_make_mode(bool autonomous, bool danger, bool warning, bool brake,
                           char* out, size_t out_size);
 
+// Builds "IMU,ax,ay,az,gx,gy,gz*CS\n". Accel in m/s^2 (2 decimals), gyro in rad/s
+// (3 decimals). Returns 0 if the line does not fit (same as protocol_make_line).
+size_t protocol_make_imu(float ax, float ay, float az,
+                         float gx, float gy, float gz,
+                         char* out, size_t out_size);
+
+// Builds "GPS,fix,sats,lat,lon,alt,hdop*CS\n". lat/lon in decimal degrees (7 decimals),
+// alt in m (1 decimal), hdop 2 decimals. Returns 0 if the line does not fit.
+size_t protocol_make_gps(bool fix, int sats, double lat, double lon,
+                         float alt, float hdop,
+                         char* out, size_t out_size);
+
 // Parses a CMD body (checksum already removed), e.g. "CMD,0.30,12.5,0.00".
 // Returns true and fills the three outputs only if the body is exactly
 // CMD plus three finite numbers. Otherwise returns false and leaves them alone.
