@@ -8,8 +8,11 @@ Max line length: 100 characters. Bad or missing checksum: drop the line.
 
 CMD,speed,steer,lift
 - speed: m/s, float (negative = reverse)
-- steer: steering angle in degrees, float (computed on the Pi)
+- steer: steering angle in degrees, float, positive = left (computed on the Pi, clamped to +-30, PLACEHOLDER)
 - lift: lift speed, float
+There is no DANGER message from the Pi. To stop, send CMD with speed 0; the master also brakes
+when CMD goes stale (PLACEHOLDER 500 ms). Danger from the sensor board reaches the master over
+the safety link, not through the Pi.
 
 ## ESP -> Pi
 

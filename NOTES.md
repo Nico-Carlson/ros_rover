@@ -150,7 +150,7 @@ valid checksums: `LIFT,1,0*16`, `MODE,1,0,0,0*02`, `IMU,0.10,0.00,9.81,0.000,0.0
 - Layout: `protocol/` is NOT a ROS package (`protocol.py`, `bridge.py`, `kinematics.py`, `cpp/`, tests). `firmware/master_serial/` and `firmware/sensor_serial/` hold COPIES of the `protocol/cpp/` files
   they need; re-copy after any change.
 - Tests: `cd ~/rover_ws/protocol && python3 -m pytest -q` (run from inside `protocol/`). C++: `cd ~/rover_ws/protocol/cpp && g++ -Wall -o test_protocol test_protocol.cpp protocol.cpp watchdog.cpp drive.cpp reverse_guard.cpp mode_switch.cpp brake.cpp tilt.cpp safety_link.cpp && ./test_protocol | grep FAIL`
-  (no output = pass). `parse_imu` and `parse_gps` have no tests yet.
+  (no output = pass). 
 - Each sketch has a `FILL IN` block at the top for pins, pulse ranges and thresholds. `ENABLE_OUTPUTS` 0 in the master means no motor pin is touched.
 - USB and the Pi link share UART0: unplug the Pi to flash, and set `DEBUG_PRINT` to 0 before wiring the Pi.
 - RC pulses measured 2026-11-12 (us): steer ch1 983 / 1511 / 2051 (left / rest / right); throttle+brake ch2 1001 (full throttle) / 1554 rest / 2061 (brake); lift ch6 983 down / 1515 / 2048 up; mode ch5 982 / 1514 / 2048
@@ -232,7 +232,7 @@ Ultrasonics: `/us/*` (5-ray scans) -> `us_to_range` (sim only) -> `/us_range/*` 
 - Lift interlock bug (`lift_nd` stays 1), then the remaining output tests (brake on the lever, `STEER_AUTO_SIGN`, lift speed).
 - Where the GPS wires land on the sensor ESP and which pins to use; MPU6050 axis mapping and gyro bias for the `IMU` line.
 - Throttle controller and brake driver model numbers; which supply each part sits on (36 to 42 V pack versus parts rated 27 to 30 V); an emergency cut-off.
-- Pi UART names and `config.txt` overlays; `DANGER` (Pi -> ESP) is not defined in the spec.
+- Pi UART names and `config.txt` overlays; 
 - Launch on the Pi: `hardware.launch.py` still lacks the RPLIDAR driver and a Nav2 params file without the range layer; it has not been rerun since it switched to `master_port` / `sensor_port`.
 
 ## Repo layout

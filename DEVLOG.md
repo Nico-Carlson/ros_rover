@@ -340,19 +340,18 @@ blocks and recovers on the next newline. Booleans are `1`/`0`; field order is pa
 | Direction | Line                                | Meaning                                                                                                                                      |
 | --------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | Pi -> ESP | `CMD,speed,steer,lift`              | speed m/s (negative = reverse, 2 decimals), steering ANGLE in degrees (1 decimal, positive = left, computed on the Pi), lift speed (always 0.00 for now) |
-| Pi -> ESP | `DANGER`                            | NOT in the spec yet                                                                                                                          |
 | ESP -> Pi | `MODE,auto,danger,warning,brake`    | autonomous switch, danger, warning, brake applied                                                                                            |
 | ESP -> Pi | `LIFT,down,up`                      | limit-switch LEVELS (1 = pressed), continuous (10 Hz). `/lift_down` is true ONLY when the latest line is under 1 s old, down is 1 and up is 0 |
 | ESP -> Pi | `BAT,volts`                         | battery voltage, one decimal, 1 Hz                                                                                                           |
 | ESP -> Pi | `IMU,ax,ay,az,gx,gy,gz`             | m/s^2 (2 decimals), rad/s (3 decimals), body frame x forward, y left, z up; ESP applies scaling, axis mapping and gyro bias; 50 Hz; Pi stamps on receipt; no orientation |
 | ESP -> Pi | `GPS,fix,sats,lat,lon,alt,hdop`     | fix 1/0, satellites, decimal degrees (7 decimals), altitude m (1 decimal), HDOP (2 decimals); ESP parses NMEA; sent once per NEW fix; fix 0 = Pi publishes nothing |
 
-Still to add to `SPEC.md`: `DANGER` fields, and "steer positive = left". A separate one-way packet runs sensor -> master on pins 16/17 (the safety link, 8.3).
+There is no `DANGER` message (decided 2026-11-17): a Pi stop is `CMD` with speed 0, and the master brakes on a stale `CMD`. A separate one-way packet runs sensor -> master on pins 16/17 (the safety link, 8.3).
 
 ### 7.3 Python and Pi side
 
 - `protocol.py`: `checksum`, `parse_line`, `make_line`, `make_cmd`, `make_lift`, `LineReader`, `split_body`, `parse_mode`, `parse_floats`, `parse_imu`, `parse_gps` (the last three reject wrong
-  field counts, non-numeric or non-finite values, bad ranges, negative HDOP or satellites). `parse_imu` and `parse_gps` have NO tests yet and are not in `vectors.txt`.
+  field counts, non-numeric or non-finite values, bad ranges, negative HDOP or satellites). parse_imu and parse_gps are tested in protocol/test_imu_gps.py (11 tests); IMU, GPS and MODE lines are in vectors.txt.
 - `bridge.py`: `Bridge` (pyserial, non-blocking, `poll()`, `send_cmd()`, `poll_with_lift()`) and `LiftState` (`lift_down` per the rule above; "both limits pressed" counts as a fault).
   `poll_with_lift` is assumed to pass unknown kinds (`BAT`, `IMU`, `GPS`) through unchanged. `kinematics.py`: `twist_to_steer_deg(v, wz, wheelbase=0.686, max_deg=30, stop_speed=0.05)` =
   atan(L * wz / v) in degrees, positive = left, 0 at or below the stop speed, clamped. (The old firmware's `wz * 180/pi` was wrong: it saturated at wz about 0.52.)
@@ -499,7 +498,7 @@ Hardware and firmware
 - `STEER_AUTO_SIGN`, real max steer angle, brake actuator connected to the lever, lift speed, the throttle controller and brake driver model numbers, supplies and over-voltage risks, an emergency cut-off, the transmitter-loss brake delay of up to about 1 s (acceptable?).
 - RPLIDAR variant (30 m or 18 m), exact ultrasonic model, real GPS antenna position (needs a mast out of the LIDAR plane), real mass, clearance and sensor positions; the DIHOOL lift travel versus the xacro; do the wheels sit outside the chassis.
 - Pi: UART names and `config.txt` overlays, CPU load (rf2o, MPPI, Smac's 29 s configure, SLAM if used), whether EKF update-rate warnings repeat, `rosdep` on a real Pi.
-- `DANGER` (Pi -> ESP) is undefined; the serial baud and 350 ms timeout are placeholders; `parse_imu` / `parse_gps` untested.
+- The serial baud and 350 ms timeout are placeholders. 
 
 Localization and navigation
 - A real heading source for GPS fusion (no compass), and the hardware `ekf.yaml` must fuse IMU yaw RATE only.
@@ -510,7 +509,7 @@ Localization and navigation
 ## 11. Next steps (in order)
 
 1. Fix the lift interlock bug (8.6) and add C++ tests for the new safety-flag bit.
-2. Sensor sketch: send `IMU` and `GPS` (settle GPS pins, MPU axis mapping, gyro bias, library choice). Add `parse_imu`/`parse_gps` tests and their lines to `vectors.txt`, and add `DANGER` and "steer positive = left" to `SPEC.md`.
+2. Sensor sketch: send `IMU` and `GPS` (settle GPS pins, MPU axis mapping, gyro bias, library choice). 
 3. Rerun `hardware.launch.py` with socat ports (`master_port:=/tmp/bridge_master sensor_port:=/tmp/bridge_sensor`) to confirm the new arguments.
 4. Wire the Pi to the ESPs (`DEBUG_PRINT` 0 first), confirm UART names (use stable by-id or UART names), bring up the bridge on the real boards and rerun the bench checks.
 5. Real-hardware localization: add the RPLIDAR S2 driver, a heading source, a hardware `ekf.yaml` without IMU yaw, a Nav2 params variant without the range layer; confirm `gps_covariance` stays out of the launch.
