@@ -116,7 +116,7 @@ school's camera project). Modes: (1) navigate to a GPS pin avoiding obstacles,
 - [x] exec_depend entries in both package.xml files (rover_bringup, rover_description), `rosdep check` clean except rf2o's own harmless `cmake_modules` error (branch `exec-depends`, 2026-11-08). Not yet tried on a real Pi.
 - [x] Pre-ROS and old micro-ROS firmware both reviewed from source, 2026-11-08 (see "Pre-ROS firmware review" and "Old micro-ROS firmware review")
 - [ ] ESP32 firmware (with watchdog) + Pi hardware bridge
-- [ ] Serial protocol (Python + C++ + Pi bridge done on a virtual cable; ESP sketch and ROS node not started).
+- [ ] Serial protocol (Python + C++ + Pi bridge done on a virtual cable, now including IMU and GPS on the Python/bridge side; ESP sketches for IMU/GPS not started)
 - [ ] Field testing
 
 ## How to work with me (instructions for any assistant)
@@ -726,14 +726,28 @@ unvisited cells N`. States: `No boundary`, `Stopped`, `Patrolling`, `Patrolling 
 
 - LAUNCH FILES (tested on the PC with no rover):
   - `control.launch.py` (laptop): RViz with the saved `rover.rviz` plus the control panel, `use_sim_time` False, no timers. Verified: opens, panel shows "no status" with nothing running.
-  - `hardware.launch.py` (Pi): starts `esp_bridge` (port from the `esp_port` argument, PLACEHOLDER), then on timers 5/10/17/21/25 s (guesses, same order as the sim): `lidar_odom`, `ekf`, `nav2`, `boundary_canvas`, `roam`, all with `use_sim_time` false. Verified on the PC: all of those nodes appear; `esp_bridge` exits on the missing serial device, as expected. `esp_port` still has to become `master_port` and `sensor_port` (see below).
+ - ports from the `master_port` and `sensor_port` arguments (PLACEHOLDERS `/dev/ttyUSB0` and `/dev/ttyUSB1`; ttyUSB numbers can swap between boots, so use stable `/dev/serial/by-id/` paths or the Pi's own UART names once wired)
   - `boundary_canvas` and `roam` run on the PI, not the laptop, because the canvas saves `config/boundary.yaml` and roam reloads it from the same folder.
   - `lidar_odom.launch.py` and `ekf.launch.py` got a `sim` argument (default true, so `sim_nav` is unchanged). `sim:=false` leaves out `sim_lift_signal`, `gps_covariance`, and the `gps/fix` -> `gps/fix_cov` remap in navsat_transform. Verified with `ros2 node list`.
-- STILL MISSING from the Pi launch (TODO comments in the file): RPLIDAR S2 driver publishing `/scan` (frame `lidar_link`); GPS and IMU publishers (`/gps/fix` with real covariance, `/imu`; the sensor sketch sends tilt only and the GPS wires are not traced); a Nav2 params variant without the ultrasonic range layer (no ultrasonics on the real rover); debug prints must be off (`DEBUG_PRINT` 0) before the Pi is wired to the ESPs.
-- TWO-PORT esp_bridge (edited and compiles, NOT YET TESTED): the old node had one `port`, but the master (MODE out, CMD in) and the sensor board (LIFT and BAT out) are separate UARTs. Now: parameters `master_port` and `sensor_port` (placeholders `/dev/ttyUSB0` and `/dev/ttyUSB1`), two `Bridge` objects, `sensor.poll_with_lift` handles LIFT and BAT, `master.poll` handles MODE, and CMD is sent through the master. `protocol/bridge.py` did not change. The bridge exits at startup if either port is missing.
+- STILL MISSING from the Pi launch (TODO comments in the file): RPLIDAR S2 driver publishing `/scan` (frame `lidar_link`); GPS and IMU publishers (`/gps/fix` with real covariance, `/imu`; the sensor ESP does not send `IMU` or `GPS` lines yet (the sensor sketch sends tilt only and the GPS wires are not traced); the bridge side is done
+- TWO-PORT esp_bridge (tested on the PC with two socat cables 2026-11-17, UNTESTED ON HARDWARE)
+- /lift_down and /rover/autonomous follow their lines, and CMD goes only through the master./lift_down and /rover/autonomous follow their lines, and CMD goes only through the master.
+- CMD follows /cmd_vel (0.30 / 24.6 for x 0.3, z 0.2), drops to 0 within 0.5 s of the publisher stopping, and handles the negative-steer, 0.03, clamp-at-30 and negative-speed cases.
+- UNTeSTED ON HARDWARE
 - The real ports are the Pi's own UARTs (one dedicated UART per ESP, no USB adapters, decided 2026-11-08): probably `/dev/ttyAMA...` names. Which UARTs a Pi 5 exposes and the `config.txt` overlay names are still unchecked.
-- NEXT: test the two-port bridge on the PC with two `socat -d -d pty,raw,echo=0 pty,raw,echo=0` cables (one per ESP): send `LIFT,1,0*16` on the sensor cable and watch `/lift_down`; send `MODE,1,0,0,0*02` on the master cable and watch `/rover/autonomous`; `cat` the master cable's far end to see the CMD lines. Then change `hardware.launch.py` to pass `master_port` and `sensor_port`.
+- DONE 2026-11-17 (PC, two socat cables): `LIFT,1,0*16` on the sensor cable sets `/lift_down` true; `MODE,1,0,0,0*02` on the master cable sets `/rover/autonomous` true (resend within 0.5 s); CMD goes only through the master cable. CMD matches `/cmd_vel`: x 0.3, z 0.2 gives `CMD,0.30,24.6,0.00*7B`; it drops to speed 0 within 0.5 s of the publisher stopping; negative z gives negative steer; 0.03 m/s gives steer 0.0; large z clamps at 30.0; negative speed passes through. The third CMD field is the lift speed, always 0.00 for now.
+- socat gotcha: the pty numbers change on every socat restart, and a wrong number prints into a terminal instead of reaching the bridge. Use fixed names: `socat -d -d pty,raw,echo=0,link=/tmp/bridge_master pty,raw,echo=0,link=/tmp/esp_master` and the same with `bridge_sensor` / `esp_sensor` for the second cable. Give the bridge `/tmp/bridge_*`, write test lines to `/tmp/esp_*`.
 - LIFT INTERLOCK: see the entry above. The master's `lift_nd` stuck at 1 is not explained; recheck on the rover after reflashing both boards (the interlock line in `master_serial.ino` is still commented out).
+
+### IMU and GPS protocol and bridge (2026-11-17, branch serial-protocol; tested on the PC with a socat cable, UNTESTED ON HARDWARE)
+
+- `SPEC.md` additions (all rates PLACEHOLDER):
+  - `IMU,ax,ay,az,gx,gy,gz`: m/s^2 (2 decimals) and rad/s (3 decimals), body frame x forward, y left, z up; the ESP applies scaling, axis mapping and gyro bias; sensor ESP at 50 Hz; no timestamp (the Pi stamps it on receipt); no orientation (the MPU6050 has no compass).
+  - `GPS,fix,sats,lat,lon,alt,hdop`: `fix` 1 or 0, `sats` integer, lat/lon in decimal degrees with 7 decimals, alt in m with one decimal, hdop with two decimals; the ESP parses the NMEA, the Pi never sees raw NMEA; sent once per new fix; `fix` 0 means the Pi publishes nothing on `/gps/fix`.
+- `protocol.py`: `parse_floats`, `parse_imu`, `parse_gps` (wrong field count, non-numeric, non-finite, bad ranges, negative hdop or sats are all rejected). Python only; the C++ helpers do not have them yet.
+- `esp_bridge.py`: sensor port `IMU` publishes `/imu` (`frame_id` `imu_link`, stamped on the Pi, `orientation_covariance[0]` = -1, gyro variance 0.0004 and accel variance 0.04, parameters `gyro_variance` and `accel_variance`, PLACEHOLDERS); `GPS` publishes `/gps/fix` (`frame_id` `gps_link`, status FIX, covariance from `max(hdop, 0.5) * gps_uere` with `gps_uere` 1.5 (PLACEHOLDER), horizontal variance (h)^2, vertical 4 * (h)^2, type APPROXIMATED). Assumes `protocol/bridge.py` `poll_with_lift` passes unknown kinds through (it does for `BAT`); `bridge.py` did not change.
+- Verified on the PC (fixed-name socat cables): `IMU,0.10,0.00,9.81,0.000,0.000,0.200*62` gives accel x 0.1, z 9.81, gyro z 0.2, `orientation_covariance[0]` -1; `GPS,1,9,48.1234567,-114.1234567,900.5,1.20*66` gives status 0, covariance 3.24 / 12.96; `GPS,0,...` publishes nothing; an `IMU` line with the wrong field count and one with a bad checksum are dropped.
+- STILL OPEN: the sensor sketch does not send `IMU` or `GPS` yet; GPS pins and the NEO-6M wiring are untraced; MPU6050 mounting orientation and axis mapping; gyro bias calibration; the real covariance numbers (all placeholders); `ekf.yaml` for hardware must fuse IMU yaw rate only, not orientation (the sim map filter fuses absolute yaw, which the MPU6050 cannot provide); and `gps_covariance.py` and its `/gps/fix_cov` remap must stay out of the real launch (`sim:=false` already does this) or they overwrite the bridge's covariance.
 
 ## Firmware approach (proposed, NOT final)
 
@@ -800,9 +814,9 @@ unvisited cells N`. States: `No boundary`, `Stopped`, `Patrolling`, `Patrolling 
 - Verified on the PC only (virtual serial cable): good lines arrive, junk and corrupted lines are dropped and
   the link recovers, CMD reaches the ESP, a silent ESP makes `lift_down` false. UNTESTED ON HARDWARE.
 - Known gaps: Python reader takes `str` (bridge decodes bytes); an over-long line leaves its tail read as a new
-  line (one extra drop, harmless); no ROS node yet; `BAT`, `IMU`, `GPS`, `DANGER` not in the Python or C++
+  line (one extra drop, harmless); no ROS node yet; `DANGER` and the C++ side of IMU and GPS are not in the helpers.
   helpers; the Pi still has to treat "both limits pressed" as a fault (done in `LiftState`).
-- NEXT: finish `IMU`, `GPS`, `DANGER` in the spec; the ESP32 master sketch using the C++ code (CMD in, MODE out,
+- NEXT: finish `DANGER` in the spec; the ESP32 master sketch using the C++ code (CMD in, MODE out,
   command-timeout watchdog); a ROS node wrapping `Bridge`.
 - Branch state (2026-11-08): `serial-protocol` has NOT been merged to main or tagged. When you are happy with it:
   `git checkout main && git merge --no-ff serial-protocol && git tag serial-protocol-v1`. Check `git status` first:
