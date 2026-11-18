@@ -365,7 +365,7 @@ There is no `DANGER` message (decided 2026-11-17): a Pi stop is `CMD` with speed
   - Master port: `MODE` -> `/rover/autonomous`, `/rover/danger`, `/rover/warning`, `/rover/brake` (Bool) and `/rover/esp_link_ok` (false when no `MODE` for 0.5 s; a silent master also forces
     `autonomous` false). `/cmd_vel` -> `CMD` at 20 Hz through the master only; a `/cmd_vel` older than 0.5 s, or non-finite, sends speed 0.
 - Launch files (PC-tested with no rover): `control.launch.py` (laptop: RViz with the saved `rover.rviz` plus the panel, `use_sim_time` false). `hardware.launch.py` (Pi): `esp_bridge` (arguments `master_port` and
-  `sensor_port`, edited 2026-11-17; the launch has NOT been rerun with these arguments), then on timers 5/10/17/21/25 s `lidar_odom`, `ekf`, `nav2`, `boundary_canvas`, `roam`, all `use_sim_time` false.
+  `sensor_port`, edited 2026-11-17; rerun 2026-11-17 on socat cables, esp_bridge opens both ports, then on timers 5/10/17/21/25 s `lidar_odom`, `ekf`, `nav2`, `boundary_canvas`, `roam`, all `use_sim_time` false.
   `boundary_canvas` and `roam` run on the Pi because the canvas saves `boundary.yaml` and roam reloads it from the same folder. Still missing from it: the RPLIDAR S2 driver (`/scan`, frame `lidar_link`), a Nav2
   params variant without the ultrasonic range layer, `DEBUG_PRINT` 0 in the firmware. Stable port names (`/dev/serial/by-id/...` or the Pi's own UART names) are needed once wired.
 
@@ -513,8 +513,8 @@ Localization and navigation
 ## 11. Next steps (in order)
 
 1. Fix the lift interlock bug (8.6) and add C++ tests for the new safety-flag bit.
-2. (DONE) Sensor sketch: send `IMU` and `GPS` (settle GPS pins, MPU axis mapping, gyro bias, library choice). 
-3. Rerun `hardware.launch.py` with socat ports (`master_port:=/tmp/bridge_master sensor_port:=/tmp/bridge_sensor`) to confirm the new arguments.
+2. (DONE 2026-11-17) Sensor sketch: send `IMU` and `GPS` (settle GPS pins, MPU axis mapping, gyro bias, library choice). 
+3. (DONE 2026-11-17) Rerun `hardware.launch.py` with socat ports (`master_port:=/tmp/bridge_master sensor_port:=/tmp/bridge_sensor`) to confirm the new arguments.
 4. Wire the Pi to the ESPs (`DEBUG_PRINT` 0 first), confirm UART names (use stable by-id or UART names), bring up the bridge on the real boards and rerun the bench checks.
 5. Real-hardware localization: add the RPLIDAR S2 driver, a heading source, a hardware `ekf.yaml` without IMU yaw, a Nav2 params variant without the range layer; confirm `gps_covariance` stays out of the launch.
 6. Remaining output tests: brake on the lever, `STEER_AUTO_SIGN`, lift speed; then field tests.
