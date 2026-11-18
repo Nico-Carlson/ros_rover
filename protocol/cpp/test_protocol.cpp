@@ -720,5 +720,33 @@ int main() {
         safety_link_status(&s, 62020, SAFETY_TIMEOUT_MS, &d, &w, &st);
     }
 
+    // --- IMU and GPS builders: must reproduce the vectors.txt lines exactly ---
+    {
+        char out[128];
+        size_t n;
+
+        n = protocol_make_imu(0.10f, 0.00f, 9.81f, 0.000f, 0.000f, 0.200f, out, sizeof(out));
+        if (n != strlen(out) || strcmp(out, "IMU,0.10,0.00,9.81,0.000,0.000,0.200*62\n") != 0)
+            { printf("FAIL make_imu: rest line\n"); failures++; }
+
+        n = protocol_make_imu(-0.25f, 0.05f, 9.78f, 0.012f, -0.034f, 0.200f, out, sizeof(out));
+        if (strcmp(out, "IMU,-0.25,0.05,9.78,0.012,-0.034,0.200*63\n") != 0)
+            { printf("FAIL make_imu: negative values\n"); failures++; }
+
+        n = protocol_make_gps(true, 9, 48.1234567, -114.1234567, 900.5f, 1.20f, out, sizeof(out));
+        if (n != strlen(out) || strcmp(out, "GPS,1,9,48.1234567,-114.1234567,900.5,1.20*66\n") != 0)
+            { printf("FAIL make_gps: fix line\n"); failures++; }
+
+        n = protocol_make_gps(false, 0, 0.0, 0.0, 0.0f, 99.0f, out, sizeof(out));
+        if (strcmp(out, "GPS,0,0,0.0000000,0.0000000,0.0,99.00*44\n") != 0)
+            { printf("FAIL make_gps: no-fix line\n"); failures++; }
+
+        // output buffer too small: refuse, never a cut-off line
+        n = protocol_make_imu(0.10f, 0.00f, 9.81f, 0.000f, 0.000f, 0.200f, out, 10);
+        if (n != 0) { printf("FAIL make_imu: small buffer\n"); failures++; }
+        n = protocol_make_gps(true, 9, 48.1234567, -114.1234567, 900.5f, 1.20f, out, 10);
+        if (n != 0) { printf("FAIL make_gps: small buffer\n"); failures++; }
+    }
+
     return failures;
 }
