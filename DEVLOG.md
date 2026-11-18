@@ -355,7 +355,7 @@ There is no `DANGER` message (decided 2026-11-17): a Pi stop is `CMD` with speed
 - `bridge.py`: `Bridge` (pyserial, non-blocking, `poll()`, `send_cmd()`, `poll_with_lift()`) and `LiftState` (`lift_down` per the rule above; "both limits pressed" counts as a fault).
   `poll_with_lift` is assumed to pass unknown kinds (`BAT`, `IMU`, `GPS`) through unchanged. `kinematics.py`: `twist_to_steer_deg(v, wz, wheelbase=0.686, max_deg=30, stop_speed=0.05)` =
   atan(L * wz / v) in degrees, positive = left, 0 at or below the stop speed, clamped. (The old firmware's `wz * 180/pi` was wrong: it saturated at wz about 0.52.)
-- C++ (`protocol/cpp/`): `protocol`, `watchdog`, `drive`, `reverse_guard`, `mode_switch`, `brake`, `tilt`, `safety_link`; IMU and GPS builders are not there. Known small gaps: an over-long line leaves its
+- C++ (`protocol/cpp/`): `protocol`, `watchdog`, `drive`, `reverse_guard`, `mode_switch`, `brake`, `tilt`, `safety_link`; IMU and GPS builders are now in protocol/cpp/ (protocol_make_imu, protocol_make_gps), tested against vectors.txt and copied into both sketch folders. Known small gaps: an over-long line leaves its
   tail read as a new line (one extra drop, harmless).
 - `esp_bridge.py` (`rover_bringup/scripts`), PC-tested, UNTESTED ON HARDWARE. Parameters: `master_port`, `sensor_port` (PLACEHOLDER `/dev/ttyUSB0`, `/dev/ttyUSB1`), `baud` 115200, `lift_timeout` 1.0,
   `wheelbase` 0.686, `max_steer_deg` 30, `cmd_rate_hz` 20, `cmd_timeout` 0.5, `mode_timeout` 0.5, `gyro_variance`, `accel_variance`, `gps_uere`. It exits at startup if either port is missing.
@@ -513,7 +513,7 @@ Localization and navigation
 ## 11. Next steps (in order)
 
 1. Fix the lift interlock bug (8.6) and add C++ tests for the new safety-flag bit.
-2. Sensor sketch: send `IMU` and `GPS` (settle GPS pins, MPU axis mapping, gyro bias, library choice). 
+2. (DONE) Sensor sketch: send `IMU` and `GPS` (settle GPS pins, MPU axis mapping, gyro bias, library choice). 
 3. Rerun `hardware.launch.py` with socat ports (`master_port:=/tmp/bridge_master sensor_port:=/tmp/bridge_sensor`) to confirm the new arguments.
 4. Wire the Pi to the ESPs (`DEBUG_PRINT` 0 first), confirm UART names (use stable by-id or UART names), bring up the bridge on the real boards and rerun the bench checks.
 5. Real-hardware localization: add the RPLIDAR S2 driver, a heading source, a hardware `ekf.yaml` without IMU yaw, a Nav2 params variant without the range layer; confirm `gps_covariance` stays out of the launch.
