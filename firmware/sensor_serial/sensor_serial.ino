@@ -34,8 +34,8 @@
 #define LINK_BAUD      115200   // PLACEHOLDER: must match the master
 #define SAFETY_SEND_MS 100      // 10 Hz
 
-#define PIN_GPS_RX  36     // GPS module TX -> ESP RX. Input-only pin is fine for RX. UNVERIFIED wiring
-#define PIN_GPS_TX  33     // PLACEHOLDER: only needed to configure the GPS, we never send to it
+#define PIN_GPS_RX  33     // GPS module TX -> ESP RX. Input-only pin is fine for RX. UNVERIFIED wiring
+#define PIN_GPS_TX  35     // only needed to configure the GPS, we never send to it
 #define GPS_BAUD    9600   // NEO-6M default (from memory, UNVERIFIED)
 // ===================================================
 
@@ -169,6 +169,16 @@ void loop() {
     size_t gps_n = protocol_make_gps(fix, sats, lat, lon, alt, hdop, gps_out, sizeof(gps_out));
     if (gps_n > 0) Serial.write((const uint8_t*)gps_out, gps_n);
   }
+
+  // TEMP GPS debug: delete after the bench check
+  // static uint32_t last_gpsdbg_ms = 0;
+  // if (now - last_gpsdbg_ms >= 1000) {
+  //   last_gpsdbg_ms = now;
+  //   Serial.printf("# GPSDBG chars=%lu ok=%lu bad=%lu withfix=%lu\n",
+  //                 gps.charsProcessed(), gps.passedChecksum(),
+  //                 gps.failedChecksum(), gps.sentencesWithFix());
+  // }
+  // END TEMP
 
   // TEMP lift limit debug: delete after the bench check
   // static uint32_t last_dbg_ms = 0;

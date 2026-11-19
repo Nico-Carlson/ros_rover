@@ -19,7 +19,7 @@ now). Mapping is secondary.
 | Simulation and navigation stack        | Done in Gazebo only: robot model, obstacle world, dual EKF, rf2o LIDAR odometry, scan gating, Nav2, roaming, control panel. Never run on the Pi. |
 | Pi <-> ESP serial protocol and bridge  | Done and tested on the PC with virtual serial cables (`socat`). Never connected to a real ESP.                                                    |
 | ESP32 firmware (master and sensor)     | Written. Bench-tested on the real rover 2026-11-12: RC inputs, receiver failsafe, safety link, MPU6050, all motor outputs with wheels off the ground. |
-| Open firmware blocker                  | Lift "not down" interlock: the master's `lift_nd` stays 1, so the master will not drive (see 8.6).                                                |
+| Open firmware blocker                  | None. Lift interlock verified on the bench 2026-11-19 in manual mode (see 8.6). Auto mode path untested until the Pi sends `CMD`. |
 | Missing for real navigation            | IMU and GPS lines from the sensor ESP, RPLIDAR driver, a heading source for GPS fusion, Pi wiring, hardware Nav2 params, field testing.          |
 
 Read next: section 10 (open questions) and section 11 (next steps).
@@ -419,6 +419,7 @@ Verified 2026-11-17 on two socat cables:
   master's debug line and does not raise danger. The sequence number is not checked. Verified on hardware: after flashing, the master showed `stale=0`.
 - Tilt: the MPU6050 is mounted upside down about the X axis (rest read roll -166.4, pitch -1.2, GUESS from the numbers). `MPU_SIGN_Y` and `MPU_SIGN_Z` are flipped and level offsets applied in the sketch's `FILL IN` block (calibrated 2026-11-12; the four numbers
   are not recorded here, copy them from the sketch). Not recorded: `danger=0 warn=0` at rest, and the nose up/down and left/right symmetry check. The MPU connection looked marginal (dropped out until power and ground were reseated).
+- 2026-11-19 bench, GPS: NO DATA. The `# GPSDBG` counters stayed at chars=0 ok=0 bad=0 for three pin combinations (RX 36/TX 33, RX 35/TX 33, RX 33/TX 35), so no bytes reach Serial2 and it is not a baud or talker-prefix problem. Wiring as last stated: module RX wire on ESP pin 35 (so the module TX would be on 33; unconfirmed, I only had the user's word for it). Not yet checked: module power LED, VCC, shared ground, voltage on the module's TX pin, continuity to the ESP header pin. A classroom with no fix is NOT the cause (the module sends NMEA without a fix). Sketch currently has RX 33 / TX 35. Pin 35 is input-only so it cannot drive TX; harmless since we never send to the GPS.
 
 ### 8.4 Bench session 2026-11-12 (first hardware contact)
 
@@ -451,7 +452,7 @@ Not done: brake actuator connected to the lever, `STEER_AUTO_SIGN` and the steer
   `ssh pi` and read the port with picocom (only one reader per port). Later: esp_bridge forwards '#' debug lines to /rover/master_debug
   (needs the 100-char line limit sorted; the current master debug line is probably longer). Bluetooth is an optional extra, not the main path.cat firmware/sensor_serial/sensor_serial.ino
 
-### 8.6 OPEN BLOCKER: lift "not down" interlock
+### 8.6 Lift "not down" interlock (RESOLVED 2026-11-19)
 
 - Gap found: the throttle worked with the lift not fully down, because the master never knew the lift state (the sensor sent `LIFT` only to the Pi; `LIFT,1,0` = down, `LIFT,0,1` = up, `LIFT,0,0` = between).
 - Fix in progress: bit 2 (0x04) of the safety packet flags = "lift not down" (the sensor sends it from the lower limit; true = not pressed). `SafetyLink.lift_not_down` defaults to TRUE until a good packet says otherwise
@@ -462,6 +463,8 @@ Not done: brake actuator connected to the lever, `STEER_AUTO_SIGN` and the steer
   pass (tested). Remaining suspects: LIMIT_PRESSED_LEVEL on pin 13 (UNVERIFIED), or stale flash on
   one board. On the rover: reflash both, print digitalRead(13) while pressing the lower limit,
   watch the LIFT line on the Pi side.
+- 2026-11-19 bench: sensor pins 13/14 read LOW when pressed (middle 1/1, bottom 0/1, top 1/0). After reflashing both boards, master `lift_nd` follows the lower limit with `stale=0`, so the 11-12 stuck value was stale flash, not a code bug. Interlock line re-enabled. Verified in manual mode: lift not down + full throttle gives dac 0 and brake 1; lower limit pressed gives throttle passes through; releasing the limit with throttle held cuts throttle and brakes. NOT tested: auto mode.
+- Known gap: the link HOLDS the last `lift_not_down`. If the sensor board dies or its wire comes loose after reporting "down", the interlock stays open. Decide whether a stale link should force it back to true.
 
 ### 8.7 Pin map
 
@@ -501,8 +504,8 @@ limit and eco settings, battery sag, gearing, the large 0.159 m wheel radius). T
 ## 10. Open questions and known issues
 
 Hardware and firmware
-- Lift interlock bug (8.6): the master will not drive until `lift_nd` follows the limit switch.
 - Sensor sketch `IMU` and `GPS` lines are written but unverified. Bench checks needed: IMU axis mapping (move the rover by hand and note which of gx, gy, gz responds and its sign; yaw left should give positive gz), gyro near 0 and accel magnitude near 9.8 at rest, the 13 deg mounting offset not applied to the IMU line, GPS wire pins, whether the module sends `$GPGGA` or `$GNGGA`, whether `TinyGPSCustom` fires once per fix, and the real baud rate.
+- 2026-11-19 bench: yaw sign verified (left turn by hand gives gz up to +0.34 rad/s; gx, gy stay under 0.09, consistent with the board's tilt leaking into them). Assumes the turn was left (counterclockwise). Mounting tilt still not applied to the IMU line.
 - `STEER_AUTO_SIGN`, real max steer angle, brake actuator connected to the lever, lift speed, the throttle controller and brake driver model numbers, supplies and over-voltage risks, an emergency cut-off, the transmitter-loss brake delay of up to about 1 s (acceptable?).
 - RPLIDAR variant (30 m or 18 m), exact ultrasonic model, real GPS antenna position (needs a mast out of the LIDAR plane), real mass, clearance and sensor positions; the DIHOOL lift travel versus the xacro; do the wheels sit outside the chassis.
 - Pi: UART names and `config.txt` overlays, CPU load (rf2o, MPPI, Smac's 29 s configure, SLAM if used), whether EKF update-rate warnings repeat, `rosdep` on a real Pi.
@@ -524,17 +527,14 @@ Localization and navigation
 
 ## 11. Next steps (in order)
 
-1. Fix the lift interlock bug (8.6) and add C++ tests for the new safety-flag bit.
-2. Sensor sketch `IMU` and `GPS`: DONE in code (2026-11-19, compile only). Remaining is the bench check listed in section 10. Library choices: Adafruit_MPU6050 and TinyGPSPlus.
-3. (DONE 2026-11-17) Rerun `hardware.launch.py` with socat ports (`master_port:=/tmp/bridge_master sensor_port:=/tmp/bridge_sensor`) to confirm the new arguments.
-4. Wire the Pi to the ESPs (`DEBUG_PRINT` 0 first), confirm UART names (use stable by-id or UART names), bring up the bridge on the real boards and rerun the bench checks.
-5. Real-hardware localization: add the RPLIDAR S2 driver, a heading source, a hardware `ekf.yaml` without IMU yaw, a Nav2 params variant without the range layer; confirm `gps_covariance` stays out of the launch. (Nav2 variant done, Still open: RPLIDAR driver, heading source, hardware ekf.yaml.)
-5b. Heading: (a) pure-Python `heading_fit` module with synthetic-noise tests (how many meters of travel at 5 m noise);
-    (b) `goto_pin.py` node in the style of roam.py; (c) sim run where the node ignores the sim compass and relies on the fit.
-    Field: log /gps/fix under real canopy first to size the noise numbers.
-6. Remaining output tests: brake on the lever, `STEER_AUTO_SIGN`, lift speed; then field tests.
-7. Merge `serial-protocol` and tag `serial-protocol-v1`.
-8. Later: stuck detector and recovery, remaining roaming aborts, inflation-slider retest, Pi CPU checks.
+1. DONE 2026-11-19: lift interlock verified (manual). Open: auto-mode check, stale-link hold decision (8.6).
+2. GPS wiring: no bytes arrive. Check power LED, VCC, GND, voltage on the module TX pin, continuity to the ESP pin, then add an edge counter on the RX pin if still silent. Then confirm $GPGGA vs $GNGGA and one line per fix outdoors.
+3. IMU: decide whether to apply the mounting offset (13 deg roll, about 12 deg pitch if the rover was level) to the IMU line; check accel scale.
+4. Pi link (3a to 3e above), with DEBUG_PRINT 0 first.
+5. Real-hardware localization: RPLIDAR driver, heading estimate (see section 10), BAT divider check.
+6. Remaining output tests: brake on the lever, STEER_AUTO_SIGN, lift speed; then field tests.
+7. Merge serial-protocol and tag serial-protocol-v1.
+8. Later: stuck detector, roaming aborts, inflation-slider retest, Pi CPU checks.
 
 ## 12. Working agreements (for any assistant working with the maintainer)
 
