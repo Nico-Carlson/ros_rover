@@ -10,13 +10,13 @@
 #include <ESP32Servo.h>
 
 #define CMD_TIMEOUT_MS 500   // PLACEHOLDER: stop if no fresh CMD for this long
-#define DEBUG_PRINT 1        // set to 0 for real runs
+#define DEBUG_PRINT 0        // set to 0 for real runs
 
 
 
 // ===================== FILL IN =====================
 // Every uncertain value lives here. Check against the real wiring.
-#define ENABLE_OUTPUTS 1        // 0 = never touch the motor pins (first test)
+#define ENABLE_OUTPUTS 0        // 0 = never touch the motor pins (first test)
 
 // RC inputs (pins from the pre-ROS firmware)
 #define PIN_RC_STEER     35     // ch1
