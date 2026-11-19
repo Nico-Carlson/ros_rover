@@ -25,6 +25,14 @@ def generate_launch_description():
     sensor_port_arg = DeclareLaunchArgument(
         "sensor_port", default_value="/dev/ttyUSB1"
     )  # PLACEHOLDER (LIFT and BAT out)
+    nav2_params_arg = DeclareLaunchArgument(
+        "nav2_params",
+        default_value=os.path.join(
+            get_package_share_directory("rover_bringup"),
+            "config",
+            "nav2_params_hardware.yaml",
+        ),
+    )
     master_port = LaunchConfiguration("master_port")
     sensor_port = LaunchConfiguration("sensor_port")
 
@@ -56,7 +64,11 @@ def generate_launch_description():
         "ekf.launch.py",
         {"use_sim_time": "false", "sim": "false"},
     )
-    nav2 = include("rover_bringup", "nav2.launch.py", {"use_sim_time": "false"})
+    nav2 = include(
+        "rover_bringup",
+        "nav2.launch.py",
+        {"use_sim_time": "false", "params_file": LaunchConfiguration("nav2_params")},
+    )
 
     boundary_canvas = Node(
         package="rover_bringup",
@@ -75,6 +87,7 @@ def generate_launch_description():
         [
             master_port_arg,
             sensor_port_arg,
+            nav2_params_arg,
             esp_bridge,
             TimerAction(period=5.0, actions=[lidar_odom]),
             TimerAction(period=10.0, actions=[ekf]),
