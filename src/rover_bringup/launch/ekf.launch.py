@@ -11,11 +11,16 @@ from launch.substitutions import PythonExpression
 
 def generate_launch_description():
     bringup_share = get_package_share_directory("rover_bringup")
-    ekf_params = os.path.join(bringup_share, "config", "ekf.yaml")
     use_sim_time_arg = DeclareLaunchArgument("use_sim_time", default_value="true")
     use_sim_time = LaunchConfiguration("use_sim_time")
     sim_arg = DeclareLaunchArgument("sim", default_value="true")
     sim = LaunchConfiguration("sim")
+
+    sim_params = os.path.join(bringup_share, "config", "ekf.yaml")
+    hardware_params = os.path.join(bringup_share, "config", "ekf_hardware.yaml")
+    ekf_params = PythonExpression(
+        ["'", sim_params, "' if '", sim, "' == 'true' else '", hardware_params, "'"]
+    )
 
     ekf_odom = Node(
         package="robot_localization",
