@@ -140,6 +140,7 @@ ros2 launch rover_bringup sim_nav.launch.py
   `controller_server.verbose not found`; a one-time `Invalid frame ID "odom"` if Nav2 starts before the EKF; `/cmd_vel_teleop` in
   the topic list; rf2o `Waiting for laser_scans....`; navsat_transform "Latitude 45d more than 20d from N pole" (unconfirmed).
 - The sim runs slow (real-time factor about 52 to 55%, `/scan` about 6.7 Hz); it says nothing about Pi performance.
+- the variant must be kept in sync with nav2_params.yaml when you tune the original (it’s a copy, so tuning one doesn’t change the other).
 
 ## 4. Frames, data flow and measurements
 
@@ -288,7 +289,7 @@ Final design (superseding the early single-EKF and wheel-odometry steps, which a
 - `nav2.launch.py` is our OWN launch, because the stock `navigation_launch.py` hard-codes `route_server` and `docking_server`, and docking fails
   without a dock plugin and aborts the whole bringup. (Deleting the `docking_server` block from the params file did not help for the same reason.)
   Starts eight nodes plus a lifecycle manager; start it LAST. Smac takes about 29 s to configure (check on the Pi).
-- Not done: real steer angle for `minimum_turning_radius`, scan-silent handling, Pi CPU check, hardware params variant without the range layer.
+- Not done: real steer angle for `minimum_turning_radius`, scan-silent handling, Pi CPU check, nav2_params_hardware.yaml (same as nav2_params.yaml but range_layer dropped from both plugins: lists, blocks left in place) exists, nav2.launch.py takes params_file, sim_nav takes nav2_params (default: original), hardware.launch.py takes nav2_params (default: the variant). Verified 2026-11-18: sim with the variant reaches “Managed nodes are active” with both costmaps lacking the range layer; hardware launch on socat cables shows the local costmap without it.
 
 ### 6.7 Roaming, boundary and control panel (tag roaming-and-panel-v1)
 
@@ -366,8 +367,7 @@ There is no `DANGER` message (decided 2026-11-17): a Pi stop is `CMD` with speed
     `autonomous` false). `/cmd_vel` -> `CMD` at 20 Hz through the master only; a `/cmd_vel` older than 0.5 s, or non-finite, sends speed 0.
 - Launch files (PC-tested with no rover): `control.launch.py` (laptop: RViz with the saved `rover.rviz` plus the panel, `use_sim_time` false). `hardware.launch.py` (Pi): `esp_bridge` (arguments `master_port` and
   `sensor_port`, edited 2026-11-17; rerun 2026-11-17 on socat cables, esp_bridge opens both ports, then on timers 5/10/17/21/25 s `lidar_odom`, `ekf`, `nav2`, `boundary_canvas`, `roam`, all `use_sim_time` false.
-  `boundary_canvas` and `roam` run on the Pi because the canvas saves `boundary.yaml` and roam reloads it from the same folder. Still missing from it: the RPLIDAR S2 driver (`/scan`, frame `lidar_link`), a Nav2
-  params variant without the ultrasonic range layer, `DEBUG_PRINT` 0 in the firmware. Stable port names (`/dev/serial/by-id/...` or the Pi's own UART names) are needed once wired.
+  `boundary_canvas` and `roam` run on the Pi because the canvas saves `boundary.yaml` and roam reloads it from the same folder. Still missing from it: the RPLIDAR S2 driver (`/scan`, frame `lidar_link`), `DEBUG_PRINT` 0 in the firmware. Stable port names (`/dev/serial/by-id/...` or the Pi's own UART names) are needed once wired.
 
 ### 7.4 Testing the bridge on the PC (no ESP needed)
 
@@ -505,7 +505,15 @@ Hardware and firmware
 - The serial baud and 350 ms timeout are placeholders. 
 
 Localization and navigation
-- A real heading source for GPS fusion (no compass), and the hardware `ekf.yaml` must fuse IMU yaw RATE only.
+- Heading source for GPS fusion: DECIDED 2026-11-18 (design only, nothing built). GPS-pin navigation stays a goal even under
+  canopy with noisy GPS. No calibration drive: the rover starts toward the pin on a guessed heading (yaw 0 = east) and keeps
+  correcting. A Pi-side node fits odom displacement (rf2o + gyro) against GPS displacement (east/north) with a running
+  least-squares fit, weighted so the estimate barely moves until the rover has travelled several times the GPS error.
+  Corrections are applied only in the goal node (pin lat/lon -> odom frame); the EKFs and navsat_transform are left alone.
+  Goals are re-sent only when the estimate changes by more than about 10 deg or the pin moves more than a couple of meters.
+  Goal tolerance sized to GPS error (5 to 10 m, GUESS). Odom-frame roaming and avoidance do not need heading.
+  Magnetometer rejected for now (motor and 36 V wiring interference); dual NEO-6M GPS rejected (baseline too short).
+  Sim IMU stays a perfect compass: the sim is not degraded, the flaws are known.
 - Why rf2o produces impossible speeds (the gate only hides it); how rf2o behaves on rough, cluttered forest terrain; a second stuck-detection signal.
 - Realistic sim IMU noise; tune covariances (GPS, rf2o, IMU) against real data; real steer angle for `minimum_turning_radius`; Nav2 behavior when `/scan_filtered` goes silent.
 - Remaining roaming aborts (`Start occupied`, planner timeouts); retest the inflation sliders; sliders reading real values at startup.
@@ -516,7 +524,10 @@ Localization and navigation
 2. (DONE 2026-11-17) Sensor sketch: send `IMU` and `GPS` (settle GPS pins, MPU axis mapping, gyro bias, library choice). 
 3. (DONE 2026-11-17) Rerun `hardware.launch.py` with socat ports (`master_port:=/tmp/bridge_master sensor_port:=/tmp/bridge_sensor`) to confirm the new arguments.
 4. Wire the Pi to the ESPs (`DEBUG_PRINT` 0 first), confirm UART names (use stable by-id or UART names), bring up the bridge on the real boards and rerun the bench checks.
-5. Real-hardware localization: add the RPLIDAR S2 driver, a heading source, a hardware `ekf.yaml` without IMU yaw, a Nav2 params variant without the range layer; confirm `gps_covariance` stays out of the launch.
+5. Real-hardware localization: add the RPLIDAR S2 driver, a heading source, a hardware `ekf.yaml` without IMU yaw, a Nav2 params variant without the range layer; confirm `gps_covariance` stays out of the launch. (Nav2 variant done, Still open: RPLIDAR driver, heading source, hardware ekf.yaml.)
+5b. Heading: (a) pure-Python `heading_fit` module with synthetic-noise tests (how many meters of travel at 5 m noise);
+    (b) `goto_pin.py` node in the style of roam.py; (c) sim run where the node ignores the sim compass and relies on the fit.
+    Field: log /gps/fix under real canopy first to size the noise numbers.
 6. Remaining output tests: brake on the lever, `STEER_AUTO_SIGN`, lift speed; then field tests.
 7. Merge `serial-protocol` and tag `serial-protocol-v1`.
 8. Later: stuck detector and recovery, remaining roaming aborts, inflation-slider retest, Pi CPU checks.
