@@ -1,15 +1,17 @@
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
+from launch.substitutions import LaunchConfiguration
 import os
 
 
-def include(package, launch_file):
+def include(package, launch_file, launch_arguments=None):
     share = get_package_share_directory(package)
     return IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(share, "launch", launch_file))
+        PythonLaunchDescriptionSource(os.path.join(share, "launch", launch_file)),
+        launch_arguments=(launch_arguments or {}).items(),
     )
 
 
@@ -17,7 +19,17 @@ def generate_launch_description():
     sim = include("rover_description", "sim.launch.py")
     lidar_odom = include("rover_bringup", "lidar_odom.launch.py")
     ekf = include("rover_bringup", "ekf.launch.py")
-    nav2 = include("rover_bringup", "nav2.launch.py")
+    nav2_params_arg = DeclareLaunchArgument(
+        "nav2_params",
+        default_value=os.path.join(
+            get_package_share_directory("rover_bringup"), "config", "nav2_params.yaml"
+        ),
+    )
+    nav2 = include(
+        "rover_bringup",
+        "nav2.launch.py",
+        {"params_file": LaunchConfiguration("nav2_params")},
+    )
 
     rviz_config = os.path.join(
         get_package_share_directory("rover_description"), "rviz", "rover.rviz"
@@ -57,6 +69,7 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            nav2_params_arg,
             sim,
             TimerAction(period=10.0, actions=[lidar_odom]),
             TimerAction(period=10.0, actions=[us_to_range]),

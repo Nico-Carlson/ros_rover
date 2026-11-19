@@ -9,7 +9,9 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     bringup_share = get_package_share_directory("rover_bringup")
-    nav2_params = os.path.join(bringup_share, "config", "nav2_params.yaml")
+    default_params = os.path.join(bringup_share, "config", "nav2_params.yaml")
+    params_arg = DeclareLaunchArgument("params_file", default_value=default_params)
+    nav2_params = LaunchConfiguration("params_file")
 
     use_sim_time_arg = DeclareLaunchArgument("use_sim_time", default_value="true")
     use_sim_time = LaunchConfiguration("use_sim_time")
@@ -61,6 +63,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             use_sim_time_arg,
+            params_arg,
             controller,
             smoother,
             planner,
