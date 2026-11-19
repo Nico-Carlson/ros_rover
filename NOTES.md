@@ -163,6 +163,7 @@ valid checksums: `LIFT,1,0*16`, `MODE,1,0,0,0*02`, `IMU,0.10,0.00,9.81,0.000,0.0
 - Tilt sensor: the MPU6050 is mounted upside down about the X axis, so the Y and Z signs are flipped and level offsets are applied in the sensor sketch's `FILL IN` block.
 - Bridge topics: `/lift_down`, `/battery_voltage`, `/rover/autonomous`, `/rover/danger`, `/rover/warning`, `/rover/brake`, `/rover/esp_link_ok`, `/imu`, `/gps/fix`. `/cmd_vel` -> `CMD` at 20 Hz through the master.
   The bridge exits at startup if either serial port is missing.
+- 2026-11-19: sensor sketch now sends IMU (50 Hz) and GPS (per GGA). Compiles, UNTESTED ON HARDWARE. Bench-check axis mapping and GPS pins/talker prefix (details in DEVLOG 8.3 and 10).
 
 ## Frames and rules
 

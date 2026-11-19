@@ -159,7 +159,7 @@ Sim data flow: Gazebo -> `ros_gz_bridge` -> `/scan`, `/imu`, `/gps/fix`, `/odom`
 hardware). Ultrasonics: `/us/*` (5-ray scans) -> `us_to_range` (sim only) -> `/us_range/*` (Range) -> `range_layer` in both costmaps.
 
 Hardware data flow (planned; Pi never wired yet): `/cmd_vel` -> `esp_bridge` -> `CMD` -> master ESP. Master ESP -> `MODE` -> bridge ->
-`/rover/*`. Sensor ESP -> `LIFT`, `BAT` (done), `IMU`, `GPS` (bridge side done, sketch side not) -> bridge -> `/lift_down`,
+`/rover/*`. Sensor ESP -> `LIFT`, `BAT` (done), `IMU`, `GPS` (bridge side done and PC-tested, sketch side written 2026-11-19, UNTESTED ON HARDWARE) -> bridge -> `/lift_down`,
 `/battery_voltage`, `/imu`, `/gps/fix`. `/lift_down` feeds `scan_gate`. The RPLIDAR driver publishing `/scan` is not written.
 
 ### Measurements and placeholders
@@ -412,7 +412,8 @@ Verified 2026-11-17 on two socat cables:
 
 ### 8.3 Sensor sketch and safety link
 
-- Sends `LIFT` at 10 Hz, `BAT` at 1 Hz, reads the MPU6050 tilt at 50 Hz (a dead sensor for 350 ms = danger), and sends the safety packet. It does NOT send `IMU` or `GPS` lines yet.
+- Sends `LIFT` at 10 Hz, `BAT` at 1 Hz, `IMU` at 50 Hz, `GPS` once per GGA sentence, reads the MPU6050 tilt at 50 Hz (a dead sensor for 350 ms = danger), and sends the safety packet.
+- `IMU` and `GPS` sending written 2026-11-19, compiles, UNTESTED ON HARDWARE. IMU: same read as the tilt code, mounting signs applied, gyro bias averaged over 200 samples (about 2 s) at boot, so the rover must be still at power-up (PLACEHOLDER). The 13 deg mounting offset is NOT applied to the IMU line (only to tilt). GPS: TinyGPSPlus on Serial2, 9600 baud (from memory), one line per GGA via `TinyGPSCustom` on field 6 (never per location update, which would double-count fixes), no fix sends `fix=0`. Pins RX 36 / TX 33 UNVERIFIED. Assumes the module sends `$GPGGA` (a `$GNGGA` module would send nothing). Assumes reading `TinyGPSCustom::value()` clears its update flag (not checked against the installed library version).
 - Safety link (sensor -> master, one way, pins 16/17, shared ground, 115200 PLACEHOLDER): 4 bytes at 10 Hz: magic 0xA5, sequence, flags (bit 0 danger, bit 1 warning, bit 2 lift not down), CRC-8 (poly 0x07, init 0) over sequence + flags.
   Code in `protocol/cpp/safety_link.*` (CRC, builder, byte reader that resyncs on the magic byte, freshness wrapper). Danger and warning HOLD until the next good packet; "stale" (no good packet in 350 ms, PLACEHOLDER) only shows as `stale=` in the
   master's debug line and does not raise danger. The sequence number is not checked. Verified on hardware: after flashing, the master showed `stale=0`.
@@ -446,6 +447,9 @@ L_EN, so keep the brake driver supply off for the first power-ups with outputs e
 Verified 2026-11-12 evening: the reverse relay clicks and the wheels reverse; manual throttle reaches full speed (so the 3.3 V DAC is enough for this controller); transmitter off cuts the drive quickly (not timed); lift up and down work (up needed a loose wire fixed);
 the lift will not move while the throttle is on; the brake extends on the stick push (BTS7960 LPWM pin 18, as guessed), the limit switch stops it and retract works; steering follows the stick.
 Not done: brake actuator connected to the lever, `STEER_AUTO_SIGN` and the steering angle calibration (the real max steer angle is still unmeasured), the Pi link, and the lift is slow (the firmware only sets two pins, so check the DIHOOL manual and its supply).
+- Debug with ESPs on the Pi (decided 2026-11-18, nothing built): UART0 carries both the Pi link and debug text. Bring-up: stop the bridge,
+  `ssh pi` and read the port with picocom (only one reader per port). Later: esp_bridge forwards '#' debug lines to /rover/master_debug
+  (needs the 100-char line limit sorted; the current master debug line is probably longer). Bluetooth is an optional extra, not the main path.cat firmware/sensor_serial/sensor_serial.ino
 
 ### 8.6 OPEN BLOCKER: lift "not down" interlock
 
@@ -469,7 +473,7 @@ Not done: brake actuator connected to the lever, `STEER_AUTO_SIGN` and the steer
 | 18 / 2     | BTS7960 LPWM (extends brake) / RPWM (GPIO 2 is a strapping pin)                          | 19         | warning light                                                               |
 | 13         | brake limit switch (pullup, LOW = pressed)                                               | 13 / 14    | lower / upper lift limit                                                    |
 | 4 / 26, 27 | lift ch6 in / lift outputs A, B (both HIGH = stop)                                       | 16 / 17    | UART to master (safety link)                                                |
-| 35 / 33    | steering ch1 in / steering servo out                                                     | 32 / 33    | GPS RX / TX PLACEHOLDER (free, no clash)                                    |
+| 35 / 33    | steering ch1 in / steering servo out                                                     | 32 / 33    | GPS RX 36 / TX 33 in the sketch (UNVERIFIED: wires reported there, TX unconfirmed; 36 is input-only so it can only be RX)                                    |
 | 22         | mode switch in (ch5)                                                                     |            |                                                                             |
 | 16, 17     | UART to sensor board                                                                     |            |                                                                             |
 
@@ -498,7 +502,7 @@ limit and eco settings, battery sag, gearing, the large 0.159 m wheel radius). T
 
 Hardware and firmware
 - Lift interlock bug (8.6): the master will not drive until `lift_nd` follows the limit switch.
-- Sensor sketch: `IMU` and `GPS` lines, MPU6050 mounting orientation and axis mapping, gyro bias calibration, where the GPS wires land and which pins to use.
+- Sensor sketch `IMU` and `GPS` lines are written but unverified. Bench checks needed: IMU axis mapping (move the rover by hand and note which of gx, gy, gz responds and its sign; yaw left should give positive gz), gyro near 0 and accel magnitude near 9.8 at rest, the 13 deg mounting offset not applied to the IMU line, GPS wire pins, whether the module sends `$GPGGA` or `$GNGGA`, whether `TinyGPSCustom` fires once per fix, and the real baud rate.
 - `STEER_AUTO_SIGN`, real max steer angle, brake actuator connected to the lever, lift speed, the throttle controller and brake driver model numbers, supplies and over-voltage risks, an emergency cut-off, the transmitter-loss brake delay of up to about 1 s (acceptable?).
 - RPLIDAR variant (30 m or 18 m), exact ultrasonic model, real GPS antenna position (needs a mast out of the LIDAR plane), real mass, clearance and sensor positions; the DIHOOL lift travel versus the xacro; do the wheels sit outside the chassis.
 - Pi: UART names and `config.txt` overlays, CPU load (rf2o, MPPI, Smac's 29 s configure, SLAM if used), whether EKF update-rate warnings repeat, `rosdep` on a real Pi.
@@ -521,7 +525,7 @@ Localization and navigation
 ## 11. Next steps (in order)
 
 1. Fix the lift interlock bug (8.6) and add C++ tests for the new safety-flag bit.
-2. (DONE 2026-11-17) Sensor sketch: send `IMU` and `GPS` (settle GPS pins, MPU axis mapping, gyro bias, library choice). 
+2. Sensor sketch `IMU` and `GPS`: DONE in code (2026-11-19, compile only). Remaining is the bench check listed in section 10. Library choices: Adafruit_MPU6050 and TinyGPSPlus.
 3. (DONE 2026-11-17) Rerun `hardware.launch.py` with socat ports (`master_port:=/tmp/bridge_master sensor_port:=/tmp/bridge_sensor`) to confirm the new arguments.
 4. Wire the Pi to the ESPs (`DEBUG_PRINT` 0 first), confirm UART names (use stable by-id or UART names), bring up the bridge on the real boards and rerun the bench checks.
 5. Real-hardware localization: add the RPLIDAR S2 driver, a heading source, a hardware `ekf.yaml` without IMU yaw, a Nav2 params variant without the range layer; confirm `gps_covariance` stays out of the launch. (Nav2 variant done, Still open: RPLIDAR driver, heading source, hardware ekf.yaml.)
