@@ -16,7 +16,7 @@
 
 // ===================== FILL IN =====================
 // Every uncertain value lives here. Check against the real wiring.
-#define ENABLE_OUTPUTS 0        // 0 = never touch the motor pins (first test)
+#define ENABLE_OUTPUTS 1        // 0 = never touch the motor pins (first test)
 
 // RC inputs (pins from the pre-ROS firmware)
 #define PIN_RC_STEER     35     // ch1
